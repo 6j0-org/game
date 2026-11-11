@@ -22,7 +22,8 @@ build-image:
     PLATFORMS: linux/amd64,linux/arm64
   before_script:
     - docker run --privileged --rm tonistiigi/binfmt --install arm64
-    - docker buildx create --use --name builder
+    - docker context create builder-ctx
+    - docker buildx create --use --name builder builder-ctx
   script:
     - |
       set -eu
