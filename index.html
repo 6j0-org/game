@@ -224,6 +224,27 @@
     #shop-wallet { color: #ffd257; font: 700 calc(16px * var(--fs)) ui-monospace, Menlo, Consolas, monospace; }
     #shop-greeting { margin: 0 0 12px; font-style: italic; opacity: 0.85; }
     #shop-status { min-height: 1.4em; font-size: calc(13px * var(--fs)); opacity: 0.85; margin: 8px 0; }
+    /* Talking to townsfolk (npcs.js) and the quest log (L). */
+    #npc, #quests { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(24, 14, 6, 0.55); z-index: 5; } /* (over the message log) */
+    #npc[hidden], #quests[hidden] { display: none; }
+    #npc .card { width: min(500px, calc(100vw - 32px)); text-align: left; }
+    #quests .card { width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 32px); display: flex; flex-direction: column; text-align: left; }
+    #npc h2, #quests h2 { margin: 0; font-size: calc(24px * var(--fs)); color: #f2d49b; }
+    #npc header, #quests header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+    #npc-role, #quests-done { font-size: calc(13px * var(--fs)); opacity: 0.7; }
+    #npc-note { margin: 0 0 6px; font-style: italic; color: #8fe07a; font-size: calc(15px * var(--fs)); }
+    #npc-note:empty { display: none; }
+    #npc-text { margin: 0 0 12px; font-size: calc(16px * var(--fs)); line-height: 1.45; }
+    .quest-box { border: 1px solid rgba(242, 212, 155, 0.35); background: rgba(242, 212, 155, 0.07); border-radius: 10px; padding: 9px 12px; margin-bottom: 10px; }
+    .quest-box b { display: block; color: #f2d49b; font-size: calc(15px * var(--fs)); }
+    .quest-box small { display: block; opacity: 0.8; font-size: calc(13px * var(--fs)); margin-top: 3px; }
+    .quest-box .ready { color: #8fe07a; opacity: 1; }
+    .quest-box .quest-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+    .quest-box .quest-row button { white-space: nowrap; padding: 5px 10px; }
+    #npc-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+    #npc-buttons .primary { border-color: #f2d49b; color: #f2d49b; }
+    #quests-list { overflow-y: auto; min-height: 0; margin-bottom: 10px; }
+    #quests-list .none { opacity: 0.7; font-style: italic; }
     #printer {
       position: fixed; inset: 0; display: grid; place-items: center; background: rgba(8, 12, 24, 0.6);
     }
@@ -706,6 +727,22 @@
       <div id="shop-wares"></div>
       <div id="shop-status"></div>
       <button id="shop-close">Back to game</button>
+    </div>
+  </div>
+  <div id="npc" hidden>
+    <div class="card">
+      <header><h2 id="npc-name"></h2><span id="npc-role"></span></header>
+      <p id="npc-note"></p>
+      <p id="npc-text"></p>
+      <div id="npc-quest"></div>
+      <div id="npc-buttons"></div>
+    </div>
+  </div>
+  <div id="quests" hidden>
+    <div class="card">
+      <header><h2>📜 Quests</h2><span id="quests-done"></span></header>
+      <div id="quests-list"></div>
+      <button id="quests-close">Back to game</button>
     </div>
   </div>
   <div id="creator" hidden>

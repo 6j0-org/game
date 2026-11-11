@@ -8,6 +8,7 @@
 //   - a fish (or anything else) reeled in is a point for the Fishing Rod
 //   - shaping, firing (a point a piece) and glazing pottery are points in Pottery
 //   - washing a dish is points in Dishwash (its XP)
+//   - finishing a quest for someone in the Fantasy Town is points in Questing (quests.js)
 // Your level comes from your total points (first level at levelFirst, each next one levelMore further),
 // and your title is your best skill with "er" on the end ("Wander", "Rocket Launcherer"). No Three.js, no DOM.
 
@@ -20,9 +21,9 @@ tune('Health & XP', {
 });
 
 /** Skills that aren't an item: punching (an empty hand), spells cast with an empty hand, washing dishes, planting seeds. */
-const SPECIAL = { empty: 'Punch', magic: 'Magic', dishwash: 'Dishwash', plant: 'Plant', pottery: 'Pottery', cooking: 'Cooking', crafting: 'Crafting' };
+const SPECIAL = { empty: 'Punch', magic: 'Magic', dishwash: 'Dishwash', plant: 'Plant', pottery: 'Pottery', cooking: 'Cooking', crafting: 'Crafting', quest: 'Questing' };
 /** Titles that don't come out right with "er" on the end. */
-const TITLES = { pottery: 'Potter', rod: 'Fisher', bucket: 'Milker', cooking: 'Chef', crafting: 'Crafter' };
+const TITLES = { pottery: 'Potter', rod: 'Fisher', bucket: 'Milker', cooking: 'Chef', crafting: 'Crafter', quest: 'Hero' };
 /** What a skill (an item kind, or a special one) is called. */
 export const skillName = (kind) => SPECIAL[kind] ?? TOOLS[kind]?.name ?? (kind === 'hand' ? HAND.name : kind);
 /** Your best skill's name + "er": a Wand user is a Wander. Nobody's anything yet: Adventurer. */

@@ -29,7 +29,7 @@ tune('Gardening', {
 });
 
 export const GARDEN_TOOLS = { tiller: 'till', sprayer: 'water', weedtorch: 'torch' };
-const TILLABLE = new Set([DIRT, GRASS, SNOW_GRASS, MUD]);
+export const TILLABLE = new Set([DIRT, GRASS, SNOW_GRASS, MUD]);
 const SIDES = [[0, -1], [1, 0], [0, 1], [-1, 0]]; // N, E, S, W
 
 /** Tills a row starting at (x, y, z) along `facing` (0 N, 1 E, 2 S, 3 W). Returns how many blocks it tilled. */

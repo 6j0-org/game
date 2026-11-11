@@ -54,7 +54,7 @@ export class MapView {
   }
 
   /**
-   * @param me      { x, z, yaw, name, bed: {x,y,z}|null }
+   * @param me      { x, z, yaw, name, bed: {x,y,z}|null, quests?: [{ x, z, label, color }] }
    * @param others  [{ id, name, x, z }]
    */
   draw(me, others) {
@@ -91,6 +91,17 @@ export class MapView {
       this._bed(bx, by);
       const dist = Math.round(Math.hypot(me.bed.x + 0.5 - me.x, me.bed.z + 0.5 - me.z));
       this._label(`Bed${off ? ` · ${dist} m` : ''}`, bx, by + 24);
+    }
+
+    // Quest markers (quests.js): lost things, gardens to till, people waiting for you. Pinned to the edge like the bed.
+    for (const q of me.quests || []) {
+      let [qx, qy] = toPx(q.x, q.z);
+      const off = qx < 10 || qy < 10 || qx > W - 10 || qy > W - 10;
+      qx = Math.min(W - 12, Math.max(12, qx));
+      qy = Math.min(W - 12, Math.max(12, qy));
+      this._questMark(qx, qy, q.color);
+      const dist = Math.round(Math.hypot(q.x - me.x, q.z - me.z));
+      this._label(`${q.label}${off ? ` · ${dist} m` : ''}`, qx, qy + 22);
     }
 
     // You: an arrow pointing where you face.
@@ -134,6 +145,25 @@ export class MapView {
     ctx.fillRect(x - 2, y - 3, 4, 12);
     ctx.fillStyle = '#f4f4fa';
     ctx.fillRect(x - 6, y - 9, 12, 5);
+  }
+
+  /** A quest marker: a diamond with an exclamation mark. */
+  _questMark(x, y, color) {
+    const { ctx } = this;
+    ctx.beginPath();
+    ctx.moveTo(x, y - 10);
+    ctx.lineTo(x + 9, y);
+    ctx.lineTo(x, y + 10);
+    ctx.lineTo(x - 9, y);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.strokeStyle = '#1b1b1b';
+    ctx.lineWidth = 2;
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#1b1b1b';
+    ctx.fillRect(x - 1, y - 6, 2, 7);
+    ctx.fillRect(x - 1, y + 3, 2, 2);
   }
 
   _phone(x, y, color) {

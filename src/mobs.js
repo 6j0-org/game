@@ -247,7 +247,7 @@ export class Mobs {
       if (!m.dead) return true;
       if (!m.silentDeath) {
         const loot = m.type === 'cow' ? rollCowLoot(this.rand) : m.type === 'seedoil' ? rollSeedOilLoot(this.rand)
-          : MOB_TYPES[m.type].flies ? ['bird'] : m.type === 'penguin' ? ['penguin'] : [];
+          : MOB_TYPES[m.type].flies ? (this.rand() < T.featherChance ? ['bird', 'feather'] : ['bird']) : m.type === 'penguin' ? ['penguin'] : [];
         if (!MOB_TYPES[m.type].passive) {
           const lootMult = this.settings?.loot ?? 1;
           loot.push(...rollCoinLoot(this.rand, lootMult));

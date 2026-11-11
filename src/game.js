@@ -13,7 +13,7 @@ import { T, tune, bindTunable } from './tuning.js';
 import { World, CH, CS } from './world.js';
 import { Player } from './player.js';
 import { Mobs, MOB_TYPES } from './mobs.js';
-import { spend, ammoCount, scrollKind, meleeStyle } from './items.js';
+import { spend, ammoCount, scrollKind, meleeStyle, itemGroup } from './items.js';
 import { Drops, Throwables, FOOD, DISHES, TOOLS, TRAITS, itemStats, isMiningKind, itemName, rollTraits, fallHealFor, fallDamageFor, itemCount, blockIdOf, printable, printUsd, BLOCK_PRINTS, shopOffer, grantItem,
   townOffer, isArmor, scrollOf } from './items.js';
 import { SETTINGS, cleanSetting, loadSettings, migrateSettings, SETTINGS_VERSION, settingText, gunStats, setTuning } from './settings.js';
@@ -30,7 +30,7 @@ import { unfiredInfo, unfiredKey, unfiredName, firedId, fireSeconds, upgradeUnfi
 import { SNOW_LAYER } from './blocks.js';
 import { BLOCKS, POTTERY_WHEEL, KILN, GLAZING_TABLE, POT_OBJECTS, CLAYS, isLuminary, potteryId, potteryName } from './blocks.js';
 import { AIR, WATER, ICE, FLUID, LAVA, WHEAT, HOTBAR, COLD_WALLET, SOLID, SHAPES, TRAPDOOR, LADDER, isBed, bedInfo, bedOther, BED_FOOT, isTrapdoor, isLadder, baseId, isDoor, doorInfo, doorId,
-  UNBREAKABLE, shopOfBlock, isCrop, isSoil, cropInfo, CROPS, MINE_TOOL, rightTool, LEAFY, GRASS, SNOW_GRASS } from './blocks.js';
+  UNBREAKABLE, shopOfBlock, isCrop, isSoil, cropInfo, CROPS, MINE_TOOL, rightTool, LEAFY, GRASS, SNOW_GRASS, PLANT } from './blocks.js';
 import { daylight } from './daycycle.js';
 import { nextRate, zecFor, round2 } from './market.js';
 import { STATS, rollStats, statEffects, withBonus } from './stats.js';
@@ -38,7 +38,11 @@ import { GUNS, AMMO, spreadDir } from './weapons.js';
 import { VoiceRoom } from './voiceroom.js';
 import { runCommand } from './commands.js';
 import { BESTIARY } from './bestiary.js';
-import { GARDEN_TOOLS, till, water, torch, newDay, harvest, canPlant } from './garden.js';
+import { GARDEN_TOOLS, TILLABLE, till, water, torch, newDay, harvest, canPlant } from './garden.js';
+import { Npcs } from './npcs.js';
+import { cleanQuests, questOffer, offerSeed, questReady, questGoal, questAsk, lostName, hello, thanks } from './quests.js';
+import { forageFind } from './forage.js';
+import { MARKET } from './townplan.js';
 import { totalPoints, levelFor, maxHpFor, pointsFor } from './skills.js';
 
 export const PROTOCOL = 1;
@@ -139,6 +143,7 @@ export class Game {
     this.throwables = new Throwables(this.world);
     this.fireballs = new Fireballs(this.world);
     this.drones = new Drones(rand); // CONSUME deliveries in flight
+    this.npcs = new Npcs(this.world, rand); // the Fantasy Town's people (npcs.js), out when someone's near a market
     this.storms = []; // Blizzards: { id, owner, x, y, z, t, damage, chill, biteT }
     this.nextStormId = 1;
 
@@ -255,6 +260,7 @@ export class Game {
     p.level = levelFor(totalPoints(p.skills));
     p.maxHp = maxHpFor(p.level);
     p.buildy = !!saved.buildy;
+    p.quests = cleanQuests(saved.quests); // (quests.js)
     if (typeof saved.worn === 'string' && isArmor(saved.worn)) { p.worn = saved.worn; p.wornFree = !!saved.wornFree; }
     for (const h of ['left', 'right']) if (typeof saved.hands?.[h] === 'string') p.hands[h] = saved.hands[h];
     p.validateHands();
@@ -363,6 +369,8 @@ export class Game {
       case 'garden': return this._garden(e, msg);
       case 'wear': return this._wear(e, msg);
       case 'buildy': return this._buildy(e);
+      case 'talk': return this._talk(e, msg); // a townsperson (npcs.js)
+      case 'quest': return this._quest(e, msg);
       default:
     }
   }
@@ -724,6 +732,7 @@ export class Game {
       : action === 'water' ? water(this.world, x, y, z) : torch(this.world, x, y, z);
     this._fx({ type: 'garden', action, by: e.id, x: x + 0.5, y: y + 1, z: z + 0.5, n });
     if (n) this._skill(e, kind);
+    if (n && action === 'till') this._tilledFor(e, x, y, z, n);
     if (!n && action === 'till') e.send({ type: 'msg', kind: 'deny', text: 'Till dirt or grass with nothing on top' });
     if (!n && action !== 'till') e.send({ type: 'msg', kind: 'deny', text: `Aim at your garden (tilled dirt) to ${action === 'water' ? 'water' : 'weed'} it` });
   }
@@ -833,6 +842,13 @@ export class Game {
     if (clay) {
       e.p.blocks[clay] = (e.p.blocks[clay] || 0) + 1;
       e.send({ type: 'msg', kind: 'clay', text: `Found some ${BLOCKS[clay].name.toLowerCase()}` });
+    }
+    // Gathering (forage.js): coal and ore in stone, herbs in grass, mushrooms in dirt and mud.
+    if (!e.p.buildy) {
+      for (const kind of forageFind(existing, this.rand)) {
+        e.p.materials[kind] = (e.p.materials[kind] || 0) + 1;
+        e.send({ type: 'msg', kind: 'found', text: `Found ${itemName(kind).replace(/^[A-Z]/, (c) => c.toLowerCase())}!` });
+      }
     }
     // Gathering (crafting.js): leaves sometimes drop a stick, grass sometimes some plant fiber.
     if (LEAFY[existing] && this.rand() < T.stickChance) this.drops.spawn('stick', x + 0.5, y + 0.4, z + 0.5);
@@ -1810,6 +1826,7 @@ export class Game {
       this._effects(e, dt);
       this._lava(e, dt);
       if (e.fishing) this._tickFishing(e, dt);
+      this._tickQuests(e);
       if (p.dead && !e.deathTold) { // tell everyone how it happened (the message log)
         e.deathTold = true;
         this._broadcast({ type: 'msg', kind: 'death', text: this._deathText(e) });
@@ -1858,6 +1875,7 @@ export class Game {
       }
       this._zapOrbs(dt);
       for (const ev of this.mobs.update(dt, bodies, light)) this._mobEvent(ev, entries);
+      this.npcs.update(dt, bodies);
       for (const ev of this.throwables.update(dt, (pos, s) => this._targetAt(pos, s.owner))) {
         if (ev.type === 'hit') {
           const t = TOOLS.hackysack;
@@ -1906,7 +1924,7 @@ export class Game {
     this.pruneT += dt;
     if (this.pruneT >= PRUNE_EVERY) {
       this.pruneT = 0;
-      this.world.pruneChunks(bodies.map((b) => b.pos));
+      this.world.pruneChunks([...bodies.map((b) => b.pos), ...this.npcs.list.map((n) => n.pos)]); // (townsfolk walk on chunks too)
     }
   }
 
@@ -2042,6 +2060,191 @@ export class Game {
     }
   }
 
+  // ---------- townsfolk and quests (npcs.js, quests.js) ----------
+
+  /** Is townsperson `n` there, and close enough to talk to? */
+  _nearNpc(e, n) {
+    return !!n && Math.hypot(n.pos.x - e.p.pos.x, n.pos.y - e.p.pos.y, n.pos.z - e.p.pos.z) <= REACH;
+  }
+
+  /** Right-clicked a townsperson: they turn to you and say their piece (an `npc` message: the dialog). */
+  _talk(e, { id }) {
+    const n = this.npcs.get(id);
+    if (!this._nearNpc(e, n)) return;
+    n.talkT = 10;
+    n.talkTo = { x: e.p.pos.x, z: e.p.pos.z };
+    this._sendNpc(e, n);
+  }
+
+  /**
+   * The dialog with `n`: { type: 'npc', id, name, role, text, counter?, active?, ready?, offer?, note? }. `active`
+   * is your quest for them (`ready` if you can finish it now), `offer` the one they'd give you.
+   */
+  _sendNpc(e, n, note = null) {
+    const p = e.p;
+    const msg = { type: 'npc', id: n.id, name: n.name, role: n.role, counter: n.counter ? { ...n.counter } : null, note };
+    const active = p.quests.active.find((q) => q.giver === n.key);
+    if (active) {
+      msg.active = this._questCopy(active);
+      msg.ready = !p.buildy && questReady(active, p);
+      msg.text = msg.ready ? 'Oh, you\'ve done it! Is that for me?'
+        : `${p.buildy ? 'Take that hard hat off first, then we\'ll talk. ' : ''}${questAsk(active)}`;
+    } else if ((p.quests.cool[n.key] || 0) > Date.now()) {
+      msg.text = `${hello(n.role, this.rand)} I've nothing more for you just now. Come back in a little while.`;
+    } else if (p.buildy) {
+      msg.text = `${hello(n.role, this.rand)} I might have work for you, but not while you're wearing that hard hat.`;
+    } else if (p.quests.active.length >= T.maxQuests) {
+      msg.text = `${hello(n.role, this.rand)} You've your hands full already. Come back when you've finished one of your jobs.`;
+    } else {
+      const offer = this._offer(e, n);
+      if (offer) {
+        msg.offer = this._questCopy(offer);
+        msg.text = offer.text;
+      } else msg.text = hello(n.role, this.rand);
+    }
+    e.send(msg);
+  }
+
+  /** A quest to send (its own copy: single player passes messages without copying them). */
+  _questCopy(q) {
+    return { ...q, ...(q.spot ? { spot: { ...q.spot } } : {}) };
+  }
+
+  /** `you.quests`: your quests, and who has nothing for you yet (cooling down). */
+  _questsYou(p) {
+    const now = Date.now();
+    return { active: p.quests.active.map((q) => this._questCopy(q)), cool: Object.keys(p.quests.cool).filter((k) => p.quests.cool[k] > now), done: Object.values(p.quests.count).reduce((a, b) => a + b, 0) };
+  }
+
+  /** What `n` offers this character now (a quest without an id), or null. The same every time you ask, until you've done it. */
+  _offer(e, n) {
+    const seed = offerSeed(n.key, e.token, e.p.quests.count[n.key] || 0);
+    for (let tries = 0; tries < 4; tries++) {
+      const o = questOffer(n.role, seed + tries, tries === 3); // (the last try is always a fetching job: they need no spot)
+      const q = { giver: n.key, name: n.name, role: n.role, kind: o.kind, item: o.item, n: o.n, usd: o.usd, text: o.text };
+      if (o.kind === 'fetch') return q;
+      const spot = n.market && (o.kind === 'lost' ? this._lostSpot(n, o.rand) : this._tillSpot(n, o.rand));
+      if (!spot) continue;
+      return { ...q, spot, ...(o.kind === 'lost' ? { found: false } : { progress: 0 }) };
+    }
+    return null;
+  }
+
+  /** Where a villager's lost thing lies: out in the open (nothing overhead) on solid ground near their market square. */
+  _lostSpot(n, rand) {
+    const cx = n.market.x + MARKET / 2;
+    const cz = n.market.z + MARKET / 2;
+    for (let i = 0; i < 40; i++) {
+      const a = rand() * Math.PI * 2;
+      const r = 6 + rand() * Math.max(0, T.questLostRange - 6);
+      const x = Math.floor(cx + Math.cos(a) * r);
+      const z = Math.floor(cz + Math.sin(a) * r);
+      const y = this.world.surfaceAt(x, z); // (one above the highest solid or fluid block: so the sky's above it)
+      const ground = this.world.getBlock(x, y - 1, z);
+      if (SOLID[ground] && !FLUID[ground] && !UNBREAKABLE[ground] && Math.abs(y - (this.world.heightAt(x, z) + 1)) <= 1) return { x: x + 0.5, y, z: z + 0.5 };
+    }
+    return null;
+  }
+
+  /** The middle of a patch of open, tillable ground near a villager's market square (for a garden quest), or null. */
+  _tillSpot(n, rand) {
+    const cx = n.market.x + MARKET / 2;
+    const cz = n.market.z + MARKET / 2;
+    const tillable = (x, z) => {
+      const h = this.world.surfaceAt(x, z) - 1;
+      const above = this.world.getBlock(x, h + 1, z);
+      return TILLABLE.has(this.world.getBlock(x, h, z)) && (above === AIR || PLANT[above]) ? h : null;
+    };
+    for (let i = 0; i < 60; i++) {
+      const a = rand() * Math.PI * 2;
+      const r = MARKET / 2 + 4 + rand() * 30; // (just outside the square: its plaza is all cobbles)
+      const x = Math.floor(cx + Math.cos(a) * r);
+      const z = Math.floor(cz + Math.sin(a) * r);
+      const h = tillable(x, z);
+      if (h === null) continue;
+      let good = 0;
+      for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) if (tillable(x + dx, z + dz) === h) good++;
+      if (good >= 18) return { x: x + 0.5, y: h + 1, z: z + 0.5 };
+    }
+    return null;
+  }
+
+  /**
+   * The quest buttons: { op: 'accept' | 'turnin', id } with townsperson `id` (you have to be next to them), or
+   * { op: 'abandon', quest } from anywhere (the quest log). Answers with the dialog again, if you're talking.
+   */
+  _quest(e, { op, id, quest }) {
+    const p = e.p;
+    if (op === 'abandon') {
+      const q = p.quests.active.find((x) => x.id === quest);
+      if (!q) return;
+      p.quests.active = p.quests.active.filter((x) => x !== q);
+      e.send({ type: 'msg', kind: 'quest', text: `Quest dropped: ${questGoal(q)}` });
+      this._sendYou(e);
+      const n = this.npcs.get(id);
+      if (this._nearNpc(e, n) && n.key === q.giver) this._sendNpc(e, n);
+      return;
+    }
+    const n = this.npcs.get(id);
+    if (!this._nearNpc(e, n) || p.buildy) return;
+    const active = p.quests.active.find((q) => q.giver === n.key);
+    if (op === 'accept') {
+      if (active || (p.quests.cool[n.key] || 0) > Date.now() || p.quests.active.length >= T.maxQuests) return this._sendNpc(e, n);
+      const offer = this._offer(e, n);
+      if (!offer) return this._sendNpc(e, n);
+      const q = { id: p.quests.next++, ...offer };
+      p.quests.active.push(q);
+      e.send({ type: 'msg', kind: 'quest', text: `📜 New quest: ${questGoal(q)} (quest log: L)` });
+      let note = null;
+      if (q.kind === 'till' && !(itemCount(p, 'tiller') > 0)) { // they lend you theirs
+        p.tools.tiller = (p.tools.tiller || 0) + 1;
+        note = 'Here, take my old Tiller. Hold it and click the ground.';
+        e.send({ type: 'msg', kind: 'quest', text: `${n.name.split(' ')[0]} gave you a Tiller` });
+      }
+      this._sendYou(e);
+      return this._sendNpc(e, n, note);
+    }
+    if (op === 'turnin') {
+      if (!active || !questReady(active, p)) return this._sendNpc(e, n);
+      if (active.kind === 'fetch') spend(p, itemGroup(active.item), active.item, active.n);
+      const zec = zecFor(active.usd, this.rate);
+      p.wallet.zcash = round2(p.wallet.zcash + zec);
+      p.quests.active = p.quests.active.filter((q) => q !== active);
+      p.quests.count[n.key] = (p.quests.count[n.key] || 0) + 1;
+      p.quests.cool[n.key] = Date.now() + T.questCooldown * 60000;
+      this._skill(e, 'quest', Math.round(T.questSkill));
+      e.send({ type: 'msg', kind: 'questDone', text: `✅ Quest done for ${n.name}: +${zec.toFixed(2)} ZEC` });
+      this._fx({ type: 'sparkle', x: r2(n.pos.x), y: r2(n.pos.y + 1.6), z: r2(n.pos.z) });
+      this._sendYou(e);
+      return this._sendNpc(e, n, thanks(this.rand));
+    }
+    return undefined;
+  }
+
+  /** Lost things: walking up to one picks it up (you take it back to whoever lost it). */
+  _tickQuests(e) {
+    const p = e.p;
+    if (p.dead) return;
+    for (const q of p.quests.active) {
+      if (q.kind !== 'lost' || q.found) continue;
+      const c = p.center;
+      if (Math.hypot(c.x - q.spot.x, c.y - (q.spot.y + 0.3), c.z - q.spot.z) > T.pickupRange + 0.5) continue;
+      q.found = true;
+      this._fx({ type: 'sparkle', x: q.spot.x, y: q.spot.y + 0.3, z: q.spot.z });
+      e.send({ type: 'msg', kind: 'quest', text: `Found the ${lostName(q.item)}! Take it back to ${q.name}` });
+    }
+  }
+
+  /** Ground tilled at (x, y, z) (`n` blocks in a row from there): it counts for any garden quest it's near. */
+  _tilledFor(e, x, y, z, n) {
+    for (const q of e.p.quests.active) {
+      if (q.kind !== 'till' || q.progress >= q.n) continue;
+      if (Math.hypot(x + 0.5 - q.spot.x, z + 0.5 - q.spot.z) > T.questTillRadius || Math.abs(y + 1 - q.spot.y) > 3) continue;
+      q.progress = Math.min(q.n, q.progress + n);
+      e.send({ type: 'msg', kind: 'quest', text: q.progress >= q.n ? `That's the garden tilled: tell ${q.name}` : `Garden for ${q.name.split(' ')[0]}: ${q.progress}/${q.n} blocks tilled` });
+    }
+  }
+
   // ---------- output ----------
 
   _you(e) {
@@ -2059,6 +2262,7 @@ export class Game {
       orders: p.orders.map((o) => ({ kind: o.kind, t: Math.max(0, Math.ceil(o.t)), drone: !!o.drone })),
       food: { ...p.food }, dishes: { ...p.dishes }, wallet: { ...p.wallet }, tools: { ...p.tools }, materials: { ...p.materials }, spells: [...p.spells], hotbars: { left: [...p.hotbars.left], right: [...p.hotbars.right] },
       scrolls: { ...p.scrolls }, worn: p.worn,
+      quests: this._questsYou(p),
       cooking: p.cooking ? { out: p.cooking.out, n: p.cooking.n, t: Math.max(0, Math.ceil(p.cooking.t)) } : null, unfired: { ...p.unfired }, kiln: p.kiln ? { t: Math.max(0, Math.ceil(p.kiln.t)), n: p.kiln.pieces.reduce((a, [, n]) => a + n, 0), text: piecesText(p.kiln.pieces) } : null,
     };
   }
@@ -2099,6 +2303,7 @@ export class Game {
       backpacks: this.backpacks.map((b) => ({ id: b.id, ...pos(b), name: b.name, owner: [...this.players.values()].find((o) => o.token === b.owner)?.id ?? null })),
       drones: this.drones.list.map((d) => ({ id: d.id, ...pos(d.pos), yaw: r2(d.yaw), carrying: d.carrying })),
       storms: this.storms.map((s) => ({ id: s.id, ...pos(s), r: magic(this.settings, 'blizzardRadius') })),
+      npcs: this.npcs.list.map((n) => ({ id: n.id, key: n.key, name: n.name, role: n.role, ...pos(n.pos), yaw: r2(n.yaw), hands: { ...n.hands }, look: { ...n.look }, worn: n.worn })),
     });
   }
 
@@ -2109,7 +2314,7 @@ export class Game {
     this.savePlayer(e.token, {
       name: e.name, seed: this.seed, pos: p.dead ? null : { ...p.pos }, traits: p.traits, stats: p.baseStats, statBonus: p.statBonus, statPoints: p.statPoints,
       food: p.food, dishes: p.dishes, wallet: p.wallet, tools: p.tools, materials: p.materials, spells: p.spells, hotbars: p.hotbars, hands: p.hands, ammo: p.ammo, scrolls: p.scrolls, worn: p.worn,
-      skills: p.skills, cleaned: p.cleaned, bed: p.bed, blocks: p.blocks, buildy: p.buildy, wornFree: !!p.wornFree, unfired: p.unfired, kiln: p.kiln, cooking: p.cooking,
+      skills: p.skills, cleaned: p.cleaned, bed: p.bed, quests: p.quests, blocks: p.blocks, buildy: p.buildy, wornFree: !!p.wornFree, unfired: p.unfired, kiln: p.kiln, cooking: p.cooking,
       orders: p.orders.map((o) => ({ kind: o.kind, t: Math.max(0, o.t) })), // a drone in flight is sent again next time
     });
   }

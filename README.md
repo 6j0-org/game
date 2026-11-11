@@ -98,6 +98,7 @@ Three.js r160 is loaded from jsDelivr through the import map in `index.html`, so
 | Z / X (hold) | Whisper / shout: how far your voice carries for players who have you on "nearby only" |
 | / | Open the console to type a command (see below) |
 | J | Bestiary: every creature, with a picture and a short description |
+| L | Quest log: your quests, how far along they are, and what they pay |
 | M | Mute / unmute sound |
 | F3 | Toggle the info panel (hidden at first) |
 | P | Camera: first person (your own body, holding what's in your hands, exactly as others see it), behind you, facing you |
@@ -215,6 +216,13 @@ During the day, **cows** wander in herds on grass. Hit one and it runs (it takes
 | Fletcher | Shortbow ($45), Longbow ($120), Crossbow ($200), all two-handed, and Arrows (20 for $6) |
 | Wizard | Wand, Staff, **Rune Wand** ($260, magic 60% stronger), **Archmage Staff** ($600, 120% stronger, two-handed), Mana Potion ($15, +40 mana), and a **scroll** of every spell |
 
+**Townsfolk and quests:** every market square has its people. The five **shopkeepers** stand behind their counters, and a handful of **villagers** stroll about the plaza. They're there whenever you are (the same names and faces every visit) and can't be hurt. **Click a townsperson** (either button) to talk. A **❗** over someone's head means they have a job for you:
+
+- the **Blacksmith** wants coal and iron, copper or silver ore; the **Healer** mushrooms, Glowcaps, yarrow, wild mint, garlic or thyme; the **Innkeeper** ingredients (vegetables, wheat, steak, milk, fish); the **Fletcher** sticks, feathers, cord and plant fiber; the **Wizard** Glowcaps, sulfur, silver ore and mushrooms;
+- **villagers** lose things about the town (follow the golden beam, walk up to it, take it back), want a patch of **garden tilled** (inside the green ring; they'll lend you a Tiller if you haven't one), or are just hungry for something cooked.
+
+Coal and ore turn up now and then when you **mine stone** (silver rarely), sulfur in Hell's **brimstone**, yarrow and wild mint when you **cut grass**, mushrooms when you **dig dirt or grass** (more in swamp mud, where the rare **Glowcap** grows too), and birds leave **feathers**. Go back when you're done (**❓** over their head): you're paid in Zcash at the rate of the moment and get **Questing** skill points (title: *Hero*), and they'll have another job for you after a few minutes. You can have five quests at once, one per person; the quest log (**L**) and the Tab map show them, and you can give one up there. Rewards, sizes, the cooldown, villagers per market and every find chance are Server settings (Quests, Gathering).
+
 **Greatsword:** two hands, two attacks. The **left button** is a wide horizontal slash that hits everything in front of you (within 3.5 blocks, across 120°) for 75% damage; the **right button** is an overhead chop at one target for 175% damage that takes twice as long to recover from. All of it is in Server settings (Weapons).
 
 **Bows:** hold the button to draw a Shortbow (0.6 s) or Longbow (1 s), and let go to shoot. A full draw shoots fastest and hardest; a part draw is slower and weaker, and letting go before a quarter of the way does nothing. The Crossbow is cocked, so it fires on a click. **Arrows and bolts can be picked up again:** they stick in the block they hit, lie on the ground by a player they hit, or stay stuck in a creature (you can see them) until it dies and they fall out. Walk over one to get it back. One in ten breaks. Draw times, the least draw and the break chance are Server settings (Weapons).
@@ -310,7 +318,7 @@ Breaking blocks takes time: hold the button of an empty or tool-holding hand. By
 
 **Phone:** it's always in your inventory. Hold it and click to open it (swirly wallpaper included): it's **CONSUME**, the shop. Chat is **T**; the map is **Tab** (invisible players don't show up on it).
 
-**Menus and Esc:** clicking outside a pop-up (the Q/E picker, the printer, a shop, pottery, cooking, the Cold Wallet, the recipe book, the bestiary, Settings or the phone) closes it and puts you back in the game. In the game, **Esc** opens the **main menu** (Resume, Settings, Server settings, your name, New world). In any menu, Esc goes back one step (Settings or Server settings to the main menu; the printer, a shop, the phone and the like to the game). In the main menu, Esc goes back to the game: browsers only let a page take the mouse back on a click, so a "Click to return to the game" prompt comes up, and one click puts you back in.
+**Menus and Esc:** clicking outside a pop-up (the Q/E picker, the printer, a shop, talking to someone, the quest log, pottery, cooking, the Cold Wallet, the recipe book, the bestiary, Settings or the phone) closes it and puts you back in the game. In the game, **Esc** opens the **main menu** (Resume, Settings, Server settings, your name, New world). In any menu, Esc goes back one step (Settings or Server settings to the main menu; the printer, a shop, the phone and the like to the game). In the main menu, Esc goes back to the game: browsers only let a page take the mouse back on a click, so a "Click to return to the game" prompt comes up, and one click puts you back in.
 
 **Settings** (main menu, or V for the Voice tab), in tabs: **Controls:** mouse sensitivity, invert up/down, and a list of every key. **Sound:** volume, mute, 3D sound for headphones, how much rooms echo, birds and crickets on or off. **Voice:** your microphone and each player's volume and Nearby only (V opens this tab). **Display:** font size (all the text in menus, messages and labels; it starts at 125%), field of view, camera shake, the F3 info panel, the message log. **Graphics:** render distance and resolution. Your choices are saved in this browser.
 
@@ -328,6 +336,9 @@ In single player, the world seed, your block edits and your progress are saved i
 - `src/biomes.js`: which biome each column is in (and the first generation's smaller map, for legacy chunks), ground heights, city and backrooms layouts
 - `src/commands.js`: the `/` console's commands (`/help`, `/teleport`, `/give`, `/summon`), run by the game
 - `src/townplan.js`: the Fantasy Town: streets, houses, gardens, wells, and market squares with the five shops
+- `src/npcs.js`: the town's people: shopkeepers behind their counters and villagers wandering the market squares
+- `src/quests.js`: what the townsfolk ask for, rewards, and the quest records players keep
+- `src/forage.js`: coal, ore, sulfur, herbs, mushrooms and feathers found while mining and digging
 - `src/mesher.js`: face-culled chunk meshes with per-vertex ambient occlusion
 - `src/body.js`: AABB-vs-voxel physics shared by the player and mobs (shaped blocks via `SHAPES`, steps up slabs and stairs)
 - `src/weapons.js`: guns, ammo crates, Power Surge and the grappling hook

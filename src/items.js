@@ -9,6 +9,7 @@ import { SOLID, LEAFY, PLANT, BLOCKS, HOTBAR, PRINTER, COLD_WALLET, BED, PLANKS,
 import { GUNS, GRAPPLE, AMMO, grantAmmo } from './weapons.js';
 import { SPELLS } from './spells.js';
 import { FISH } from './fishing.js';
+import { FOUND_WHERE } from './forage.js';
 
 // Server settings (tuning.js): read the live values as T.key.
 tune('Food & traits', {
@@ -173,7 +174,19 @@ export const MATERIALS = {
   pickhead: { name: 'Stone Pick Head', desc: 'Knapped from stone: for a Stone Pick' },
   shovelhead: { name: 'Stone Shovel Head', desc: 'Knapped from stone: for a Stone Shovel' },
   blade: { name: 'Stone Blade', desc: 'Knapped from stone: for a Stone Knife or Spear' },
+  // Found while mining and digging (forage.js): what the Fantasy Town's shopkeepers ask for (quests.js). `found`: not for crafting.
+  coal: { name: 'Lump of Coal', desc: 'The blacksmith burns it in the forge', found: true },
+  ironore: { name: 'Iron Ore', desc: 'The blacksmith smelts it into iron', found: true },
+  copperore: { name: 'Copper Ore', desc: 'The blacksmith smelts it into copper', found: true },
+  silverore: { name: 'Silver Ore', desc: 'Precious: the blacksmith and the wizard both want it', found: true },
+  sulfur: { name: 'Sulfur', desc: 'Smells of rotten eggs. The wizard wants it', found: true },
+  yarrow: { name: 'Yarrow', desc: 'A herb: the healer makes salves from it', found: true },
+  mint: { name: 'Wild Mint', desc: 'A herb: the healer brews it into tonics', found: true },
+  mushroom: { name: 'Brown Mushroom', desc: 'The healer brews potions from mushrooms', found: true },
+  glowcap: { name: 'Glowcap', desc: 'A rare mushroom that glows: the healer and the wizard prize it', found: true },
+  feather: { name: 'Feather', desc: 'The fletcher fletches arrows with them', found: true },
 };
+for (const [k, m] of Object.entries(MATERIALS)) if (m.found) m.desc = `${m.desc} (${FOUND_WHERE[k]})`;
 
 /**
  * Blocks you can print (outside Buildy Boi mode you only have the blocks you've mined or printed).
@@ -461,7 +474,7 @@ export function inventoryList(player, hand = null) {
     if (itemCount(player, scrollKind(spell)) > 0) list.push({ kind: scrollKind(spell), category: 'Scroll', desc: player.spells?.includes(spell) || player.buildy ? `Click to read it: casts ${SPELLS[spell].name} for free (used up)` : `Click to read it: learn ${SPELLS[spell].name} (used up), then cast it with mana` });
   }
   for (const [k, def] of Object.entries(MATERIALS)) {
-    if (itemCount(player, k) > 0) list.push({ kind: k, category: 'Material', desc: `${def.desc} (crafting: R)` });
+    if (itemCount(player, k) > 0) list.push({ kind: k, category: 'Material', desc: def.found ? def.desc : `${def.desc} (crafting: R)` });
   }
   for (const [k, def] of Object.entries(DISHES)) {
     if (player.dishes[k] > 0) list.push({ kind: k, category: 'Dish', desc: 'Hold the button near water to wash it: +1 Dishwash' });

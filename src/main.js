@@ -46,6 +46,7 @@ import { MapView } from './map.js';
 import { zecFor, usd } from './market.js';
 import { GUNS, AMMO, GRAPPLE } from './weapons.js';
 import { STATS, statEffects, effectText, verdict } from './stats.js';
+import { questGoal, questProgress, questReady, lostName } from './quests.js';
 
 let buildSwitch = null; // { to, t } while the hard hat is going on or off (from the game)
 
@@ -146,6 +147,7 @@ function applyYou(y) {
   player.worn = y.worn ?? null;
   player.orders = y.orders || [];
   player.buildy = y.buildy;
+  player.quests = y.quests || { active: [], cool: [], done: 0 };
   buildSwitch = y.buildSwitch;
   if (!player.buildy && !(player.effects.flight > 0)) player.flying = false; // only Buildy Bois fly (and the Flying spell, while it lasts)
   player.validateHands();
@@ -432,6 +434,7 @@ const avatars = new Avatars(scene, avatarItem);
 // first person the camera floats just in front of its face (the head is hidden); P switches to a camera
 // behind you or in front of you (`viewMode`). Swings and mining go out in `state` so others see them too.
 const selfAvatar = new Avatars(scene, avatarItem);
+const npcAvatars = new Avatars(scene, avatarItem); // the Fantasy Town's people (npcs.js)
 const VIEWS = ['first person', 'behind you', 'facing you'];
 let viewMode = 0;
 let lastSelfPos = null;
@@ -597,6 +600,17 @@ const ICONS = {
   pickhead: [['#8a8e94', 1, 6, 14, 3], ['#a8acb2', 2, 6, 6, 1], ['#8a8e94', 1, 8, 2, 3], ['#8a8e94', 13, 8, 2, 3]],
   shovelhead: [['#8a8e94', 4, 3, 8, 10], ['#a8acb2', 5, 4, 3, 4], ['#6a6e74', 4, 12, 8, 1]],
   blade: [['#8a8e94', 7, 1, 3, 13], ['#a8acb2', 7, 2, 1, 10]],
+  // Found while mining and digging (forage.js)
+  coal: [['#26262a', 3, 5, 10, 8], ['#3a3a40', 5, 4, 6, 2], ['#4a4a52', 5, 6, 2, 2], ['#4a4a52', 9, 9, 2, 1]],
+  ironore: [['#8d8d8d', 2, 4, 12, 9], ['#a0a0a0', 3, 5, 4, 2], ['#c89a78', 4, 8, 2, 2], ['#c89a78', 9, 5, 2, 2], ['#b07a58', 10, 10, 2, 2]],
+  copperore: [['#8d8d8d', 2, 4, 12, 9], ['#a0a0a0', 3, 5, 4, 2], ['#d8743a', 4, 8, 2, 2], ['#d8743a', 9, 5, 2, 2], ['#3aa88a', 10, 10, 2, 2]],
+  silverore: [['#8d8d8d', 2, 4, 12, 9], ['#a0a0a0', 3, 5, 4, 2], ['#e8eef4', 4, 8, 2, 2], ['#e8eef4', 9, 5, 2, 2], ['#c8d0d8', 10, 10, 2, 2]],
+  sulfur: [['#d8c42a', 3, 6, 10, 7], ['#f4e46a', 5, 5, 5, 3], ['#b8a41a', 4, 11, 8, 2]],
+  yarrow: [['#5a8a3a', 7, 6, 2, 9], ['#5a8a3a', 4, 9, 3, 1], ['#f0ece0', 3, 2, 10, 4], ['#fffcf0', 5, 1, 6, 2]],
+  mint: [['#3a7a3a', 7, 3, 2, 12], ['#5ab45a', 3, 9, 4, 3], ['#5ab45a', 9, 6, 4, 3], ['#6ac46a', 5, 2, 6, 3]],
+  mushroom: [['#ece6d2', 6, 8, 4, 7], ['#8a5a34', 2, 4, 12, 4], ['#a06a3e', 4, 3, 8, 2], ['#ece6d2', 5, 5, 2, 1], ['#ece6d2', 10, 6, 1, 1]],
+  glowcap: [['#d8f0f0', 6, 8, 4, 7], ['#3ae0d0', 2, 4, 12, 4], ['#a8fff4', 4, 3, 8, 2], ['#ffffff', 5, 5, 2, 1], ['#ffffff', 10, 6, 1, 1]],
+  feather: [['#c8c4b8', 2, 13, 1, 2], ['#c8c4b8', 3, 12, 1, 1], ['#f0ece0', 4, 6, 4, 6], ['#e8e4d8', 6, 3, 5, 5], ['#f0ece0', 9, 1, 4, 4], ['#c8c4b8', 4, 11, 1, 1], ['#a8a498', 7, 5, 4, 1]],
   stoneaxe: [['#8a6a44', 7, 5, 2, 10], ['#8a8e94', 3, 2, 7, 5], ['#c8b078', 7, 6, 2, 1]],
   stonepick: [['#8a6a44', 7, 4, 2, 11], ['#8a8e94', 2, 2, 12, 2], ['#8a8e94', 2, 4, 2, 2], ['#8a8e94', 12, 4, 2, 2], ['#c8b078', 7, 4, 2, 1]],
   stoneshovel: [['#8a6a44', 7, 1, 2, 9], ['#8a8e94', 5, 9, 6, 6], ['#c8b078', 7, 8, 2, 1]],
@@ -791,6 +805,7 @@ const bowDraw = { left: 0, right: 0 }; // how far you've drawn a bow in each han
 // ---------- what other things in the world look like right now (from the game's snapshots) ----------
 const remote = {
   mobs: new Map(), arrows: new Map(), drops: new Map(), fireballs: new Map(), sacks: new Map(), players: new Map(), messes: new Map(), drones: new Map(), storms: new Map(), backpacks: new Map(),
+  npcs: new Map(), // the Fantasy Town's people (npcs.js)
 };
 
 function syncMap(map, list, create, update, removed) {
@@ -877,6 +892,11 @@ function applySnap(s) {
     if (soundsOn() && !nearMe(d, 2.5)) sound.play('throw', { pos: at(d) });
     return { id: d.id, pos: at(d) };
   }, (o, d) => { o.target = at(d); });
+  syncMap(remote.npcs, s.npcs || [], (d) => {
+    const body = new Body(world, 0.3, 1.8);
+    body.pos = at(d);
+    return { id: d.id, body, pos: body.pos, moved: 0 };
+  }, (n, d) => { Object.assign(n, { key: d.key, name: d.name, role: d.role, target: at(d), yaw: d.yaw, hands: d.hands, look: d.look, worn: d.worn }); });
   syncMap(remote.players, s.players.filter((p) => p.id !== myId), (d) => {
     const body = new Body(world, 0.3, 1.8);
     body.pos = at(d);
@@ -950,6 +970,7 @@ function smoothRemote(dt) {
   for (const s of remote.sacks.values()) ease(s);
   for (const d of remote.drones.values()) ease(d);
   for (const p of remote.players.values()) p.moved = ease(p);
+  for (const n of remote.npcs.values()) n.moved = ease(n);
 }
 
 // ---------- messages from the game ----------
@@ -969,7 +990,10 @@ function onMessage(m) {
         world.setBlock(x, y, z, id);
       }
       break;
-    case 'you': applyYou(m); break;
+    case 'you':
+      applyYou(m);
+      if (questsOpen) renderQuests(); // (the quest log shows what you're carrying)
+      break;
     case 'hurt':
       if (m.knock) player.impulse(m.knock.x, m.knock.y, m.knock.z);
       hurtFlash = Math.min(1, hurtFlash + 0.25 + m.amount * 0.05);
@@ -1046,12 +1070,13 @@ function onMessage(m) {
       break;
     case 'textFailed': popup("Not delivered: they've gone offline", 'deny'); break;
     case 'voice': voice.onMessage(m).catch(() => {}); break;
+    case 'npc': showNpc(m); break; // a townsperson talking to you (game.js `_sendNpc`)
     default:
   }
 }
 
 // Pop-up kinds that come with a sound ('coin' plays from the sparkle everyone sees).
-const MSG_SOUNDS = { craft: 'pickup', cook: 'ui', clay: 'pickup', pottery: 'ui', heal: 'eat', level: 'level', coin: null, cough: 'cough', sneeze: 'sneeze', join: 'join', sick: 'eat', trait: 'ui', ammo: 'ammo', surge: 'ui', weird: 'respawn', vault: 'pickup', lost: 'deny', bed: 'ui', buildy: 'ui', order: 'ui', buy: 'pickup', armor: 'ui', delivery: 'pickup', deny: 'deny', flap: 'level', stolen: 'caw' };
+const MSG_SOUNDS = { found: 'pickup', quest: 'ui', questDone: 'level', craft: 'pickup', cook: 'ui', clay: 'pickup', pottery: 'ui', heal: 'eat', level: 'level', coin: null, cough: 'cough', sneeze: 'sneeze', join: 'join', sick: 'eat', trait: 'ui', ammo: 'ammo', surge: 'ui', weird: 'respawn', vault: 'pickup', lost: 'deny', bed: 'ui', buildy: 'ui', order: 'ui', buy: 'pickup', armor: 'ui', delivery: 'pickup', deny: 'deny', flap: 'level', stolen: 'caw' };
 
 function applyFx(m) {
   const pos = { x: m.x, y: m.y, z: m.z };
@@ -1339,7 +1364,7 @@ document.getElementById('recipes').replaceWith(printerShop.el);
 // pointer-lock state is. (Some browsers, e.g. LibreWolf, don't always release or keep the lock
 // the way the spec suggests, so we never rely on it alone.)
 function menuOpen() {
-  return craftingOpen || kitchenOpen || recipesOpen || potteryOpen || printerOpen || vaultOpen || shopOpen || consoleOpen || clientOpen || sheetOpen || bestiaryOpen || picker.isOpen || phoneOut;
+  return npcOpen || questsOpen || craftingOpen || kitchenOpen || recipesOpen || potteryOpen || printerOpen || vaultOpen || shopOpen || consoleOpen || clientOpen || sheetOpen || bestiaryOpen || picker.isOpen || phoneOut;
 }
 player.inputEnabled = () => !menuOpen();
 function releaseMouseForMenu() {
@@ -1487,10 +1512,10 @@ let played = false; // been in the game yet? (before that, losing the mouse show
 const KEYS = [
   ['WASD', 'Move'], ['Mouse', 'Look'], ['Space', 'Jump, swim up, fly up'], ['Shift', 'Sprint (also flies faster)'],
   ['C', "Crouch (won't walk off edges), fly down, dive"], ['F', 'Toggle flying (Buildy Bois, or with the Flying spell)'], ['K', 'Recipe book'], ['R', 'Crafting'], ['B', 'Buildy Boi mode on/off (10 s)'],
-  ['Q / E (tap)', 'Choose what\'s in your left / right hand (drag things onto that hand\'s hotbar)'], ['Q / E (hold) + scroll', 'Switch to the next thing on that hand\'s hotbar'], ['Left / right click', 'Use your left / right hand: place, mine (hold), attack, cast, fire, eat, read a scroll, put on armor, open your phone. Right-clicking a door, bed, counter, Cold Wallet or printer uses it'],
+  ['Q / E (tap)', 'Choose what\'s in your left / right hand (drag things onto that hand\'s hotbar)'], ['Q / E (hold) + scroll', 'Switch to the next thing on that hand\'s hotbar'], ['Left / right click', 'Use your left / right hand: place, mine (hold), attack, cast, fire, eat, read a scroll, put on armor, open your phone. Right-clicking a door, bed, counter, Cold Wallet or printer uses it. Click a townsperson to talk'],
   ['Right click (hold)', 'Aim down sights with a two-handed gun or bow'], ['Middle click', 'Put the block you\'re looking at in your right hand'],
   ['Scroll wheel', 'Pick a spell (or none, so empty hands punch and mine)'], ['G (hold)', 'Wash any dirty dish (near water)'],
-  ['Tab', 'Map'], ['I', 'Character sheet'], ['J', 'Bestiary'], ['U', 'Take off your armor'], ['T', 'Chat: type a message to everyone (it shows in the message log)'],
+  ['Tab', 'Map'], ['I', 'Character sheet'], ['J', 'Bestiary'], ['L', 'Quest log'], ['U', 'Take off your armor'], ['T', 'Chat: type a message to everyone (it shows in the message log)'],
   ['V', 'Voice settings (multiplayer)'], ['Z / X (hold)', 'Whisper / shout'], ['/', 'Console: /help, /msg, /teleport, /give, /summon, /skip'],
   ['P', 'Camera: first person, behind you, facing you'], ['M', 'Mute / unmute sound'], ['F3', 'Info panel'], ['Esc', 'Settings (this)'],
 ];
@@ -1839,6 +1864,188 @@ document.getElementById('shop-close').addEventListener('click', () => closeShop(
 document.addEventListener('keydown', (e) => {
   if (shopOpen && e.code === 'Escape') closeShop(false);
 });
+
+// ---------- townsfolk and quests (npcs.js, quests.js) ----------
+// Click a townsperson to talk: the game answers with an `npc` message (what they say, your quest for them,
+// or the one they'd give you), shown here with buttons that send `quest` messages. The quest log (L) lists
+// your quests. Lost things and gardens to till have markers in the world and on the Tab map.
+
+/** What's over a townsperson's head: ❗ a job for you, ❓ yours to hand in, ❔ yours in progress. */
+function npcMarker(n) {
+  const qs = player.quests || { active: [], cool: [] };
+  const q = qs.active.find((x) => x.giver === n.key);
+  if (q) return questReady(q, player) ? '❓ ' : '❔ ';
+  if (player.buildy || qs.cool.includes(n.key) || qs.active.length >= settings.maxQuests) return '';
+  return '❗ ';
+}
+/** The townsfolk as avatars.js wants them. */
+function npcView() {
+  const view = new Map();
+  for (const n of remote.npcs.values()) {
+    view.set(n.id, { name: npcMarker(n) + n.name, pos: n.pos, yaw: n.yaw, pitch: 0, moved: n.moved || 0, hands: n.hands, look: n.look, worn: n.worn, crouch: false, phone: false, dead: false });
+  }
+  return view;
+}
+
+const npcEl = document.getElementById('npc');
+const npcButtons = document.getElementById('npc-buttons');
+let npcOpen = false;
+const ROLE_NAMES = { blacksmith: 'Blacksmith', healer: 'Healer', tavern: 'Innkeeper', fletcher: 'Fletcher', wizard: 'Wizard', villager: 'Villager' };
+/** "$12 (about 0.52 ZEC right now)". */
+const rewardText = (q) => `${usd(q.usd)} (about ${zecFor(q.usd, rate).toFixed(2)} ZEC right now)`;
+/** One quest as a box: what it wants, how far along you are, and what it pays. */
+function questBox(q, extra = null) {
+  const box = el('div', 'quest-box');
+  const { have, need } = questProgress(q, player);
+  const ready = have >= need;
+  const row = el('div', 'quest-row');
+  const text = el('div');
+  text.append(el('b', '', questGoal(q)));
+  if (q.id) text.append(el('small', ready ? 'ready' : '', ready ? `✔ Done: go back to ${q.name}` : `${have} / ${need}${q.spot && !q.found ? ` · marker ${Math.round(Math.hypot(q.spot.x - player.pos.x, q.spot.z - player.pos.z))} m away` : ''}`));
+  text.append(el('small', '', `Reward: ${rewardText(q)}`));
+  row.append(text);
+  if (extra) row.append(extra);
+  box.append(row);
+  return box;
+}
+function npcButton(label, onClick, primary = false) {
+  const b = el('button', primary ? 'primary' : '', label);
+  b.addEventListener('click', onClick);
+  return b;
+}
+function showNpc(m) {
+  document.getElementById('npc-name').textContent = m.name;
+  document.getElementById('npc-role').textContent = ROLE_NAMES[m.role] || '';
+  document.getElementById('npc-note').textContent = m.note || '';
+  document.getElementById('npc-text').textContent = `“${m.text}”`;
+  const questEl = document.getElementById('npc-quest');
+  questEl.replaceChildren(...(m.active ? [questBox(m.active)] : m.offer ? [questBox(m.offer)] : []));
+  const send = (op) => conn.send({ type: 'quest', op, id: m.id, quest: m.active?.id });
+  const buttons = [];
+  if (m.offer) buttons.push(npcButton('Accept', () => send('accept'), true));
+  if (m.active && m.ready) buttons.push(npcButton(m.active.kind === 'fetch' ? 'Hand it over' : m.active.kind === 'lost' ? 'Give it back' : 'Tell them it\'s done', () => send('turnin'), true));
+  if (m.active && !m.ready) buttons.push(npcButton('Give up this quest', () => send('abandon')));
+  if (m.counter && SHOPS[m.role]) buttons.push(npcButton('Browse wares', () => { closeNpc(null); openShop({ ...m.counter, shop: m.role }); }));
+  buttons.push(npcButton(m.offer ? 'Not now' : 'Goodbye', () => closeNpc(true)));
+  npcButtons.replaceChildren(...buttons);
+  if (!npcOpen) {
+    if (menuOpen()) return; // (something else got there first)
+    npcOpen = true;
+    npcEl.hidden = false;
+    sound.play('ui');
+    releaseMouseForMenu();
+  }
+}
+/** `resume`: true goes back to the game, false shows the click-to-resume prompt, null leaves it to whatever opens next. */
+function closeNpc(resume) {
+  if (!npcOpen) return;
+  npcOpen = false;
+  npcEl.hidden = true;
+  if (resume) resumeGame();
+  else if (resume === false) showPause();
+}
+document.addEventListener('keydown', (e) => {
+  if (npcOpen && e.code === 'Escape') closeNpc(false);
+});
+
+// The quest log (L).
+const questsEl = document.getElementById('quests');
+const questsList = document.getElementById('quests-list');
+let questsOpen = false;
+let questsKey = '';
+function renderQuests() {
+  const qs = player.quests || { active: [], done: 0 };
+  // Only rebuild (and replace the buttons) when something you'd see has changed.
+  const key = JSON.stringify([qs.active.map((q) => [q.id, questProgress(q, player).have, q.found, q.usd]), qs.done, Math.round(rate * 20)]);
+  if (key === questsKey) return;
+  questsKey = key;
+  document.getElementById('quests-done').textContent = `${qs.active.length} / ${settings.maxQuests} on the go · ${qs.done} done`;
+  if (!qs.active.length) {
+    questsList.replaceChildren(el('p', 'none', 'No quests yet. Talk to people in the Fantasy Town: shopkeepers need the makings of their trades, and villagers always want a hand with something. Someone with ❗ over their head has a job for you.'));
+    return;
+  }
+  questsList.replaceChildren(...qs.active.map((q) => {
+    const drop = el('button', '', 'Give up');
+    drop.addEventListener('click', () => conn.send({ type: 'quest', op: 'abandon', quest: q.id }));
+    const box = questBox(q, drop);
+    box.append(el('small', '', `For ${q.name}: “${q.text}”`));
+    return box;
+  }));
+}
+function setQuests(open, resume = false) {
+  if (open === questsOpen) return;
+  questsOpen = open;
+  questsEl.hidden = !open;
+  sound.play('ui');
+  if (open) {
+    questsKey = '';
+    renderQuests();
+    releaseMouseForMenu();
+  } else if (resume) resumeGame();
+  else showPause();
+}
+document.getElementById('quests-close').addEventListener('click', () => setQuests(false, true));
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT') return;
+  if (questsOpen && (e.code === 'Escape' || e.code === 'KeyL')) { e.stopPropagation(); setQuests(false); return; }
+  if (e.code === 'KeyL' && !e.repeat && !menuOpen() && player.locked) setQuests(true);
+});
+
+// Markers in the world: a lost thing lies glinting under a golden beam; a garden to till is a green ring.
+const questMarks = new Map(); // quest id -> { group, item, kind, key }
+function updateQuestMarkers(dt) {
+  const want = new Map();
+  for (const q of player.quests?.active || []) {
+    if (!q.spot || (q.kind === 'lost' && q.found) || (q.kind === 'till' && q.progress >= q.n)) continue;
+    want.set(q.id, q);
+  }
+  for (const [id, mk] of questMarks) {
+    if (want.has(id) && want.get(id).kind === mk.kind) continue;
+    scene.remove(mk.group);
+    mk.group.traverse((c) => { if (c.isMesh && c.material !== heldMaterial) { c.geometry.dispose(); c.material.dispose(); } });
+    questMarks.delete(id);
+  }
+  for (const [id, q] of want) {
+    let mk = questMarks.get(id);
+    if (!mk) {
+      const group = new THREE.Group();
+      const lost = q.kind === 'lost';
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(lost ? 0.07 : 0.12, lost ? 0.07 : 0.12, 30, 8, 1, true),
+        new THREE.MeshBasicMaterial({ color: lost ? 0xffd257 : 0x7fe07a, transparent: true, opacity: 0.32, depthWrite: false }));
+      beam.position.y = 15;
+      group.add(beam);
+      let item = null;
+      if (lost) {
+        item = buildHeldModel(q.item, heldMaterial);
+        if (item) { item.scale.multiplyScalar(1.6); item.position.y = 0.15; group.add(item); } // (a bit bigger than life, to be spotted)
+      } else {
+        const r = settings.questTillRadius;
+        const ring = new THREE.Mesh(new THREE.RingGeometry(Math.max(0.5, r - 0.25), r, 48), new THREE.MeshBasicMaterial({ color: 0x7fe07a, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false }));
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.y = 0.06;
+        group.add(ring);
+      }
+      group.position.set(q.spot.x, q.spot.y, q.spot.z);
+      scene.add(group);
+      mk = { group, item, kind: q.kind };
+      questMarks.set(id, mk);
+    }
+    if (mk.item) {
+      mk.item.rotation.y += dt * 1.5;
+      mk.item.position.y = 0.15 + Math.sin(performance.now() / 400) * 0.06;
+    }
+  }
+}
+/** Quest markers for the Tab map: lost things, gardens, and people waiting for what you've brought. */
+function questMapMarks() {
+  const active = player.quests?.active || [];
+  const marks = active.filter((q) => q.spot && !(q.kind === 'lost' && q.found) && !(q.kind === 'till' && q.progress >= q.n))
+    .map((q) => ({ x: q.spot.x, z: q.spot.z, label: q.kind === 'lost' ? lostName(q.item) : `${q.name.split(' ')[0]}'s garden`, color: q.kind === 'lost' ? '#ffd257' : '#7fe07a' }));
+  for (const n of remote.npcs.values()) {
+    if (active.some((q) => q.giver === n.key && questReady(q, player))) marks.push({ x: n.pos.x, z: n.pos.z, label: n.name.split(' ')[0], color: '#ff9a5a' });
+  }
+  return marks;
+}
 
 // ---------- pottery (pottery.js): Pottery Wheel, Kiln, Glazing Table ----------
 // One panel, three stations. Item "kinds" here are this panel's own: 'throw:<object>:<clay>' and
@@ -2732,7 +2939,7 @@ document.addEventListener('keydown', (e) => {
 /** What the maps show: you (with your bed) and everyone else's phone. */
 function mapArgs() {
   return [
-    { x: player.pos.x, z: player.pos.z, yaw: player.yaw, bed: player.bed },
+    { x: player.pos.x, z: player.pos.z, yaw: player.yaw, bed: player.bed, quests: questMapMarks() },
     [...remote.players.values()].filter((p) => !p.invisible).map((p) => ({ id: p.id, name: p.name, x: p.pos.x, z: p.pos.z })), // (invisible players stay off the map)
   ];
 }
@@ -2793,6 +3000,7 @@ function raycastEntities(o, d, max) {
   };
   for (const m of remote.mobs.values()) test('mob', m.id, m, m);
   for (const p of remote.players.values()) if (!p.dead) test('player', p.id, p, p.body);
+  for (const n of remote.npcs.values()) test('npc', n.id, n, n.body);
   return best;
 }
 
@@ -2946,6 +3154,11 @@ function updateSpellHud(changed = false) {
 /** One click with a hand. Held-button effects (mining, wand, washing, guns, aiming) run in the frame loop. */
 function useHand(hand) {
   const kind = player.hands[hand];
+  if (targetEnt?.kind === 'npc') { // townsfolk: either button talks to them
+    buttons[hand] = false;
+    conn.send({ type: 'talk', id: targetEnt.id });
+    return;
+  }
   if (hand === 'right' && interact(hand)) return;
   if (hand === 'right' && GUNS[player.hands.right]?.scope) { // a scope: each right-click zooms further, then puts it away
     buttons.right = false;
@@ -3168,6 +3381,8 @@ const POPUPS = [
   [() => picker.isOpen, () => picker.root, () => picker.cancel()],
   [() => printerOpen, () => printerEl.querySelector('.card'), () => closePrinter(true)],
   [() => shopOpen, () => shopEl.querySelector('.card'), () => closeShop(true)],
+  [() => npcOpen, () => npcEl.querySelector('.card'), () => closeNpc(true)],
+  [() => questsOpen, () => questsEl.querySelector('.card'), () => setQuests(false, true)],
   [() => potteryOpen, () => potteryEl.querySelector('.card'), () => closePottery(true)],
   [() => kitchenOpen, () => kitchenEl.querySelector('.card'), () => closeKitchen(true)],
   [() => craftingOpen, () => craftingEl.querySelector('.card'), () => closeCrafting(true)],
@@ -3196,6 +3411,7 @@ window.game = {
   openPrinter: () => openPrinter(),
   openVault: (at) => openVault(at),
   openPicker: (hand) => openPicker(hand),
+  openQuests: () => setQuests(true),
   openPhone: () => setPhone(true),
   setRate: (r) => { if (conn.game) conn.game.rate = r; },
   phoneApps, voice, sound,
@@ -3330,7 +3546,7 @@ function frame(now) {
 
   // Single player pauses for the pause screen, the picker and the printer (not the phone);
   // a shared world never pauses.
-  const pausingMenu = craftingOpen || kitchenOpen || recipesOpen || potteryOpen || printerOpen || vaultOpen || shopOpen || bestiaryOpen || picker.isOpen; // the phone isn't one
+  const pausingMenu = npcOpen || questsOpen || craftingOpen || kitchenOpen || recipesOpen || potteryOpen || printerOpen || vaultOpen || shopOpen || bestiaryOpen || picker.isOpen; // the phone isn't one
   const running = multiplayer ? !conn.closed : (player.locked || phoneOut) && !pausingMenu;
   sampleRate(realDt);
   if (multiplayer) {
@@ -3639,6 +3855,8 @@ function frame(now) {
   mobModels.syncDrops({ list: [...remote.drops.values()] });
   for (const [id, p] of remote.players) p.talking = multiplayer && voice.talking(id); // (the icon over their head)
   avatars.sync(remote.players, lightMul, realDt);
+  npcAvatars.sync(npcView(), lightMul, realDt);
+  updateQuestMarkers(realDt);
   syncSelf(lightMul, realDt);
   updateVoiceMode();
   drawRopes();

@@ -244,6 +244,37 @@ const MARKET_PLAN = [
 const FOUNTAIN = { x0: 26, z0: 26, x1: 33, z1: 33 };
 const MARKET_LAMPS = [[3, 3], [56, 3], [3, 56], [56, 56], [3, 29], [56, 29], [29, 20], [29, 41], [16, 16], [43, 16], [29, 57]];
 
+/** World column of a building's local (lx, lz): the inverse of toLocal. */
+function toWorld(b, lx, lz) {
+  switch (b.rot) {
+    case 1: return [b.x1 - lz, b.z0 + lx];
+    case 2: return [b.x1 - lx, b.z1 - lz];
+    case 3: return [b.x0 + lz, b.z1 - lx];
+    default: return [b.x0 + lx, b.z0 + lz];
+  }
+}
+
+/**
+ * Where each shopkeeper (npcs.js) stands in a market square, from its north-west corner: behind their
+ * counter, facing the door. { role, x, z, yaw, counter: { x, z } } (the counter block they serve at; its
+ * y is the floor's + 1). Roles are the shops' names, 'tavern' for the innkeeper.
+ */
+export const MARKET_SHOPKEEPERS = MARKET_PLAN.map((b) => {
+  const [lx, lz] = b.kind === 'tavern' ? [6, 2] : [4, 2]; // (clear of the forge, the barrels and the shelves)
+  const [x, z] = toWorld(b, lx, lz);
+  const [fx, fz] = toWorld(b, lx, lz + 1); // one step towards the door
+  const [cx, cz] = toWorld(b, lx, 3); // the counter in front of them
+  return { role: b.kind === 'tavern' ? 'tavern' : b.shop, x: x + 0.5, z: z + 0.5, yaw: Math.atan2(-(fx - x), -(fz - z)), counter: { x: cx, z: cz } };
+});
+
+/** Is (px, pz) in a market square (from its corner) open plaza: not in or next to a building, the fountain or a lamp post? */
+export function marketOpenSpot(px, pz) {
+  if (px < 2 || pz < 2 || px > MARKET - 3 || pz > MARKET - 3) return false;
+  const near = (b) => px >= b.x0 - 1 && px <= b.x1 + 1 && pz >= b.z0 - 1 && pz <= b.z1 + 1;
+  if (MARKET_PLAN.some(near) || near(FOUNTAIN)) return false;
+  return !MARKET_LAMPS.some(([ax, az]) => Math.abs(ax - px) <= 1 && Math.abs(az - pz) <= 1);
+}
+
 /** Is (cx, cz) one of the cells a market square covers? Returns the square's origin or null. */
 function marketAt(cx, cz) {
   const mx = mod(cx, MARKET_EVERY);

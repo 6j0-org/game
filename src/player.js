@@ -9,6 +9,7 @@ import { UNFIRED } from './pottery.js';
 import { AMMO } from './weapons.js';
 import { maxMana, sizeScale, sizeSpeed, magic, SPELLS } from './spells.js';
 import { totalPoints, levelFor, maxHpFor } from './skills.js';
+import { emptyQuests } from './quests.js';
 import { WATER, GRASS, SOLID, HOTBAR, SINK } from './blocks.js';
 
 // Server settings (tuning.js): read the live values as T.key.
@@ -62,6 +63,7 @@ export class Player extends Body {
     this.spells = []; // the spells you know (learned by reading their scrolls: spells.js)
     this.hotbars = { left: Array(8).fill(null), right: Array(8).fill(null) }; // what you've put on each hand's hotbar (item kinds)
     this.materials = Object.fromEntries(Object.keys(MATERIALS).map((k) => [k, 0])); // crafting materials (crafting.js)
+    this.quests = emptyQuests(); // jobs for the Fantasy Town's people (quests.js); the game owns them, sent in `you`
     this.unfired = Object.fromEntries(UNFIRED.map((k) => [k, 0])); // pottery on its way: thrown, trimmed, or glazed and waiting for the kiln (pottery.js)
     this.traits = { gluten: false, lactose: false }; // rolled each time you spawn
     this.baseStats = { ...AVERAGE }; // rolled each time you spawn (see stats.js)

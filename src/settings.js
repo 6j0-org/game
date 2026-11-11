@@ -26,6 +26,9 @@ import './fishing.js';
 import './cooking.js';
 import './crafting.js';
 import './skills.js';
+import './forage.js';
+import './npcs.js';
+import './quests.js';
 
 export { T, setTuning };
 
@@ -33,7 +36,7 @@ export { T, setTuning };
 export const SETTINGS = TUNABLES;
 
 /** Groups, in the order the panel shows them. */
-export const SETTING_GROUPS = ['World', 'Player', 'Health & XP', 'Food & traits', 'Stats', 'Monsters & animals', 'Items & tools', 'Blocks', 'Gardening', 'Pottery', 'Fishing', 'Cooking', 'Crafting', 'Economy', 'Weapons', 'Magic'];
+export const SETTING_GROUPS = ['World', 'Player', 'Health & XP', 'Food & traits', 'Stats', 'Monsters & animals', 'Items & tools', 'Blocks', 'Gardening', 'Pottery', 'Fishing', 'Cooking', 'Crafting', 'Gathering', 'Quests', 'Economy', 'Weapons', 'Magic'];
 
 const x = (min, max, step, unit) => ({ min, max, step, unit });
 tune('World', {
