@@ -1,0 +1,961 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Game</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Uncial+Antiqua&family=Silkscreen:wght@700&family=Lilita+One&family=Metamorphous&display=swap">
+  <style>
+    :root {
+      --panel: rgba(18, 24, 38, 0.62);
+      --panel-border: rgba(255, 255, 255, 0.18);
+      --accent: #ffcf5a;
+      --text: #f3f5fa;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #9ccdf2; }
+    :root { --fs: 1.25; } /* Font size (Settings > Display): every size below is multiplied by it */
+    body { font-size: calc(16px * var(--fs)); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--text); user-select: none; }
+    body > canvas { display: block; position: fixed; inset: 0; width: 100%; height: 100%; }
+
+    #crosshair {
+      position: fixed; left: 50%; top: 50%; width: 18px; height: 18px;
+      transform: translate(-50%, -50%); pointer-events: none; mix-blend-mode: difference;
+    }
+    #crosshair::before, #crosshair::after { content: ""; position: absolute; background: #fff; }
+    #crosshair::before { left: 8px; top: 0; width: 2px; height: 18px; }
+    #crosshair::after { top: 8px; left: 0; height: 2px; width: 18px; }
+    /* The Sniper Rifle's scope: black all round a circle, fine crosshairs and the zoom level. */
+    #scope { position: fixed; inset: 0; pointer-events: none;
+      background: radial-gradient(circle at center, transparent 0, transparent min(38vh, 38vw), rgba(0, 0, 0, 0.85) calc(min(38vh, 38vw) + 2px), #000 calc(min(38vh, 38vw) + 24px)); }
+    #scope[hidden] { display: none; }
+    #scope::before, #scope::after { content: ""; position: absolute; left: 50%; top: 50%; background: rgba(0, 0, 0, 0.85); transform: translate(-50%, -50%); }
+    #scope::before { width: min(76vh, 76vw); height: 1px; }
+    #scope::after { width: 1px; height: min(76vh, 76vw); }
+    #scope-zoom { position: absolute; left: 50%; top: calc(50% + min(38vh, 38vw) + 10px); transform: translateX(-50%); color: #cfd8c8; font: 700 calc(14px * var(--fs)) ui-monospace, Menlo, Consolas, monospace; }
+    body:has(#scope:not([hidden])) #crosshair { display: none; }
+
+    #info {
+      position: fixed; top: 12px; left: 12px; margin: 0; padding: 8px 10px;
+      font: calc(12px * var(--fs))/1.45 ui-monospace, Menlo, Consolas, monospace; white-space: pre;
+      background: var(--panel); border-radius: 8px; pointer-events: none;
+    }
+
+
+    #health {
+      --segs: 10;
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      width: 300px; max-width: calc(100vw - 32px); height: 12px; padding: 2px; border-radius: 8px;
+      background: var(--panel); border: 1px solid var(--panel-border); transition: width 0.3s;
+    }
+    #health::after { /* one segment per 2 health */
+      content: ""; position: absolute; inset: 2px; border-radius: 5px; pointer-events: none;
+      background: repeating-linear-gradient(90deg, transparent 0 calc(100% / var(--segs) - 2px),
+        rgba(0, 0, 0, 0.35) calc(100% / var(--segs) - 2px) calc(100% / var(--segs)));
+    }
+    #health-fill {
+      height: 100%; width: 100%; border-radius: 5px; transition: width 0.15s;
+      background: linear-gradient(#ff6b6b, #c62f3d);
+    }
+    #xp {
+      position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
+      width: 300px; max-width: calc(100vw - 32px); height: 6px; border-radius: 4px;
+      background: var(--panel); border: 1px solid var(--panel-border);
+    }
+    #xp-fill { height: 100%; width: 0; border-radius: 4px; background: linear-gradient(#b8f56a, #5fb82a); transition: width 0.2s; }
+    #level {
+      position: absolute; left: 50%; top: -20px; transform: translateX(-50%);
+      font: 700 calc(13px * var(--fs))/1 ui-monospace, Menlo, Consolas, monospace; color: #b8f56a; text-shadow: 0 1px 3px #000;
+    }
+    /* Hotbars: one per hand, just above the health bar (left hand on the left). Hold Q or E and scroll. */
+    .hotbar { position: fixed; bottom: 74px; display: flex; gap: 3px; z-index: 3; }
+    #hotbar-left { right: calc(50% + 6px); }
+    #hotbar-right { left: calc(50% + 6px); }
+    .hotbar .slot { position: relative; width: 36px; height: 36px; border-radius: 7px; background: rgba(10, 14, 26, 0.55); border: 1px solid var(--panel-border); display: grid; place-items: center; }
+    .hotbar .slot canvas { width: 26px; height: 26px; image-rendering: pixelated; pointer-events: none; }
+    .hotbar .slot.held { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; background: rgba(255, 210, 87, 0.12); }
+    .hotbar .slot.out canvas { opacity: 0.3; }
+    .hotbar .slot.drop { border-color: #8fe07a; background: rgba(143, 224, 122, 0.2); }
+    .hotbar .slot small { position: absolute; right: 2px; bottom: 0; font: 700 calc(10px * var(--fs)) ui-monospace, Menlo, Consolas, monospace; text-shadow: 0 1px 2px #000; pointer-events: none; }
+    .hotbar.scrolling .slot { background: rgba(10, 14, 26, 0.8); }
+    body.sheet-open .hotbar { display: none; }
+    #picker {
+      position: fixed; top: 16px; bottom: 16px; width: calc(50vw - 24px); /* the whole left or right half */
+      display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 14px;
+      background: rgba(10, 14, 26, 0.88); backdrop-filter: blur(6px); border: 1px solid var(--panel-border);
+    }
+    #picker[hidden] { display: none; }
+    #picker[data-side="left"] { left: 16px; }
+    #picker[data-side="right"] { right: 16px; }
+    #picker h2 { margin: 0; font-size: calc(18px * var(--fs)); }
+    #picker h2 kbd {
+      font: 700 calc(12px * var(--fs))/1 ui-monospace, Menlo, Consolas, monospace; padding: 3px 6px; margin-right: 8px;
+      border-radius: 6px; background: var(--accent); color: #1b1b1b; vertical-align: 2px;
+    }
+    #picker input {
+      font: inherit; font-size: calc(15px * var(--fs)); padding: 7px 11px; border-radius: 9px; color: var(--text);
+      background: rgba(255, 255, 255, 0.08); border: 1px solid var(--panel-border); outline: none;
+    }
+    #picker input:focus { border-color: var(--accent); }
+    #picker [data-hint] { font-size: calc(11px * var(--fs)); opacity: 0.55; }
+    #picker [data-list], .tile-grid {
+      overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 6px;
+      align-content: start; padding: 2px 4px 2px 2px; min-height: 0;
+    }
+    .pick-tile {
+      position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 7px 4px 5px;
+      border-radius: 9px; cursor: pointer; border: 1px solid rgba(255, 255, 255, 0.08); background: rgba(255, 255, 255, 0.04);
+    }
+    .pick-tile canvas { width: 36px; height: 36px; image-rendering: pixelated; }
+    .pick-name {
+      font-size: calc(11px * var(--fs)); line-height: 1.2; text-align: center; max-width: 100%; overflow: hidden;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word;
+    }
+    .pick-count {
+      position: absolute; top: 3px; right: 4px; font: 700 calc(11px * var(--fs)) ui-monospace, Menlo, Consolas, monospace;
+      padding: 0 4px; border-radius: 6px; background: rgba(0, 0, 0, 0.55);
+    }
+    .pick-tile.active { background: rgba(255, 207, 90, 0.18); border-color: rgba(255, 207, 90, 0.75); }
+    .pick-tile.current { box-shadow: inset 0 0 0 2px var(--accent); }
+    .pick-tile.other-hand { opacity: 0.45; }
+    #picker [data-info] { min-height: 38px; font-size: calc(13px * var(--fs)); padding-top: 6px; border-top: 1px solid var(--panel-border); }
+    #picker [data-info] small { display: block; opacity: 0.7; font-size: calc(12px * var(--fs)); margin-top: 2px; }
+    .pick-none { padding: 12px; opacity: 0.6; }
+    /* The Q/E picker fills half the screen, so its tiles are bigger. */
+    #picker h2 { font-size: calc(22px * var(--fs)); }
+    #picker input { font-size: calc(17px * var(--fs)); padding: 9px 13px; }
+    #picker [data-list] { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; flex: 1; }
+    #picker .pick-tile { padding: 10px 6px 8px; gap: 5px; }
+    #picker .pick-tile canvas { width: 56px; height: 56px; }
+    #picker .pick-name { font-size: calc(13px * var(--fs)); }
+    #picker .pick-count { font-size: calc(13px * var(--fs)); }
+    #picker [data-info] { font-size: calc(15px * var(--fs)); min-height: 48px; }
+    #picker [data-info] small { font-size: calc(13px * var(--fs)); }
+    /* Shops (3D Printer, CONSUME) use the picker's tiles, plus a price under the name. */
+    .tile-shop { display: flex; flex-direction: column; gap: 8px; min-height: 0; flex: 1; }
+    .tile-shop input {
+      font: inherit; font-size: calc(14px * var(--fs)); padding: 6px 10px; border-radius: 9px; color: var(--text);
+      background: rgba(255, 255, 255, 0.08); border: 1px solid var(--panel-border); outline: none;
+    }
+    .tile-shop input:focus { border-color: var(--accent); }
+    .tile-grid { flex: 1; }
+    .pick-price { font: 700 calc(11px * var(--fs)) ui-monospace, Menlo, Consolas, monospace; color: #ffd257; }
+    .pick-tile.unaffordable .pick-price { color: #ff8a8a; }
+    .pick-count[hidden] { display: none; }
+    .tile-info { display: flex; align-items: center; gap: 10px; padding-top: 6px; border-top: 1px solid var(--panel-border); font-size: calc(13px * var(--fs)); }
+    .tile-info[hidden] { display: none; }
+    .tile-info > div { flex: 1; min-width: 0; }
+    .tile-info small { display: block; opacity: 0.7; font-size: calc(12px * var(--fs)); margin-top: 2px; }
+    .tile-info .tile-detail { color: #ffd257; opacity: 0.9; }
+    .tile-info button { white-space: nowrap; }
+    .tile-info button:disabled { opacity: 0.35; cursor: default; }
+    #printer .tile-grid, #shop .tile-grid, #pottery .tile-grid { max-height: min(44vh, 360px); }
+    #charpick h3 { margin: 10px 0 6px; font-size: calc(14px * var(--fs)); }
+    #charpick[hidden], #switch-row[hidden], #creator[hidden] { display: none; }
+    .char-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 8px; border-radius: 8px; background: rgba(255, 255, 255, 0.06); margin-bottom: 4px; }
+    .char-row b { font-size: calc(15px * var(--fs)); }
+    .char-row small { opacity: 0.7; margin-left: 6px; }
+    .char-row .acts { display: flex; gap: 4px; }
+    .char-row button { padding: 5px 10px; }
+    .char-row.last { box-shadow: inset 0 0 0 1px var(--accent); }
+    #creator { position: fixed; inset: 0; display: grid; place-items: safe center; padding: 16px; overflow-y: auto; background: rgba(8, 12, 24, 0.85); z-index: 8; }
+    #creator .card { width: min(780px, calc(100vw - 32px)); text-align: left; }
+    #creator header { display: flex; justify-content: space-between; align-items: center; }
+    #creator h2 { margin: 0; }
+    #creator h3 { margin: 10px 0 6px; font-size: calc(14px * var(--fs)); }
+    .creator-body { display: flex; gap: 18px; flex-wrap: wrap; }
+    .creator-left { flex: 0 0 220px; display: flex; flex-direction: column; gap: 10px; }
+    #creator-preview { width: 220px; height: 300px; border-radius: 12px; background: radial-gradient(#3a4a6a, #141a2a); }
+    .creator-name { display: flex; flex-direction: column; gap: 4px; font-size: calc(13px * var(--fs)); }
+    .creator-name input { font: inherit; font-size: calc(15px * var(--fs)); padding: 7px 10px; border-radius: 8px; border: 1px solid var(--panel-border); background: rgba(255, 255, 255, 0.08); color: var(--text); }
+    .creator-right { flex: 1 1 360px; min-width: 0; }
+    .cstat { display: grid; grid-template-columns: 1fr 28px 28px 28px; gap: 6px; align-items: center; padding: 3px 0; font-size: calc(13px * var(--fs)); }
+    .cstat button { padding: 2px 0; }
+    .cstat b { text-align: center; font-size: calc(15px * var(--fs)); }
+    .cstat small { display: block; opacity: 0.65; font-size: calc(11px * var(--fs)); }
+    .clook { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-bottom: 6px; font-size: calc(13px * var(--fs)); }
+    .clook > span { width: 80px; opacity: 0.8; }
+    .clook button { padding: 4px 8px; }
+    .clook button.on { box-shadow: inset 0 0 0 2px var(--accent); }
+    .clook .sw { width: 24px; height: 24px; padding: 0; border-radius: 6px; }
+    #creator-status { min-height: 1.4em; margin: 8px 0; font-size: calc(13px * var(--fs)); color: #ff8a7a; }
+    #kitchen { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(30, 16, 8, 0.6); }
+    #kitchen[hidden], #recipes-book[hidden], #crafting[hidden] { display: none; }
+    #crafting { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(20, 16, 10, 0.6); }
+    #crafting .card { width: min(520px, calc(100vw - 32px)); text-align: left; }
+    #crafting h2 { margin: 0; font-size: calc(24px * var(--fs)); color: #e8d0a0; }
+    #crafting header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    #crafting-hint { font-size: calc(12px * var(--fs)); opacity: 0.6; }
+    #crafting-status { min-height: 1.4em; font-size: calc(13px * var(--fs)); opacity: 0.85; margin: 8px 0; }
+    #crafting .tile-grid { max-height: min(44vh, 360px); }
+    #kitchen .card { width: min(520px, calc(100vw - 32px)); text-align: left; }
+    #kitchen h2 { margin: 0; font-size: calc(24px * var(--fs)); color: #f0c9a0; }
+    #kitchen header, #recipes-book header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 6px; }
+    #kitchen-busy { font-size: calc(13px * var(--fs)); opacity: 0.85; }
+    #kitchen-greeting { margin: 0 0 12px; font-style: italic; opacity: 0.85; }
+    #kitchen-status { min-height: 1.4em; font-size: calc(13px * var(--fs)); opacity: 0.85; margin: 8px 0; }
+    #kitchen .tile-grid { max-height: min(44vh, 360px); }
+    #recipes-book { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(8, 12, 24, 0.6); z-index: 7; }
+    #recipes-book .card { width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 32px); display: flex; flex-direction: column; text-align: left; }
+    #recipes-book h2 { margin: 0; }
+    .recipes-note { margin: 0 0 8px; font-size: calc(13px * var(--fs)); opacity: 0.75; }
+    #recipes-list { overflow-y: auto; padding-right: 6px; }
+    #recipes-list h3 { margin: 14px 0 4px; font-size: calc(13px * var(--fs)); letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
+    .recipe-row { display: grid; grid-template-columns: 34px 1fr; gap: 10px; align-items: center; padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+    .recipe-row canvas { width: 32px; height: 32px; image-rendering: pixelated; }
+    .recipe-row b { font-size: calc(15px * var(--fs)); }
+    .recipe-row small { display: block; font-size: calc(13px * var(--fs)); opacity: 0.8; }
+    .recipe-row small .got { font-weight: 700; color: #8fe07a; }
+    #pottery { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(30, 16, 8, 0.6); }
+    #pottery[hidden] { display: none; }
+    #pottery .card { width: min(520px, calc(100vw - 32px)); text-align: left; }
+    #pottery h2 { margin: 0; font-size: calc(24px * var(--fs)); color: #f0c9a0; }
+    #pottery header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 6px; }
+    #pottery-have { font-size: calc(13px * var(--fs)); opacity: 0.85; text-align: right; }
+    #pottery-greeting { margin: 0 0 12px; font-style: italic; opacity: 0.85; }
+    #pottery-status { min-height: 1.4em; font-size: calc(13px * var(--fs)); opacity: 0.85; margin: 8px 0; }
+    #shop { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(24, 14, 6, 0.6); }
+    #shop[hidden] { display: none; }
+    #shop .card { width: min(520px, calc(100vw - 32px)); text-align: left; }
+    #shop h2 { margin: 0; font-size: calc(24px * var(--fs)); color: #f2d49b; }
+    #shop header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    #shop-wallet { color: #ffd257; font: 700 calc(16px * var(--fs)) ui-monospace, Menlo, Consolas, monospace; }
+    #shop-greeting { margin: 0 0 12px; font-style: italic; opacity: 0.85; }
+    #shop-status { min-height: 1.4em; font-size: calc(13px * var(--fs)); opacity: 0.85; margin: 8px 0; }
+    #printer {
+      position: fixed; inset: 0; display: grid; place-items: center; background: rgba(8, 12, 24, 0.6);
+    }
+    #printer[hidden], #vault[hidden] { display: none; }
+    #vault { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(8, 12, 24, 0.6); }
+    #vault .card { width: min(420px, calc(100vw - 32px)); text-align: left; }
+    #vault h2 { margin: 0 0 6px; font-size: calc(24px * var(--fs)); color: #bfe6ff; }
+    .vault-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.12); }
+    .vault-row b { color: #ffd257; font: 700 calc(16px * var(--fs)) ui-monospace, Menlo, Consolas, monospace; }
+    .vault-move { display: flex; gap: 8px; margin-top: 10px; }
+    .vault-move input { flex: 1; min-width: 0; padding: 8px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.25); background: rgba(0, 0, 0, 0.3); color: inherit; font: inherit; }
+    .vault-move button { flex: 1; }
+    #vault-status { min-height: 1.4em; font-size: calc(13px * var(--fs)); opacity: 0.85; margin-top: 8px; }
+    #vault-close { margin-top: 10px; }
+    #printer .card { width: min(520px, calc(100vw - 32px)); text-align: left; }
+    #printer h2 { margin: 0; font-size: calc(24px * var(--fs)); }
+    #printer header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+    #printer-wallet { color: #ffd257; font: 700 calc(16px * var(--fs)) ui-monospace, Menlo, Consolas, monospace; }
+    .recipe {
+      display: grid; grid-template-columns: 36px 1fr auto auto; gap: 12px; align-items: center;
+      padding: 8px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.05); margin-bottom: 6px;
+    }
+    .recipe canvas { width: 32px; height: 32px; image-rendering: pixelated; }
+    .recipe small { display: block; opacity: 0.7; font-size: calc(12px * var(--fs)); margin-top: 2px; }
+    .recipe .owned { font: 600 calc(13px * var(--fs)) ui-monospace, Menlo, Consolas, monospace; opacity: 0.8; }
+    .recipe button { white-space: nowrap; }
+    .recipe button:disabled { opacity: 0.35; cursor: default; }
+    #printer-progress { height: 8px; border-radius: 5px; background: rgba(0, 0, 0, 0.4); margin: 12px 0 6px; overflow: hidden; }
+    #printer-fill { height: 100%; width: 0; background: linear-gradient(90deg, #40c4d6, #ff8a3d); }
+    #printer-status { min-height: 1.4em; font-size: calc(13px * var(--fs)); opacity: 0.85; }
+    #printer-close { margin-top: 10px; }
+    #wallet {
+      position: fixed; top: 12px; right: 12px; display: flex; align-items: center; gap: 8px;
+      padding: 6px 12px 6px 8px; border-radius: 10px; background: var(--panel);
+      font: 700 calc(18px * var(--fs))/1 ui-monospace, Menlo, Consolas, monospace; color: #ffd257;
+    }
+    #wallet canvas { width: 26px; height: 26px; image-rendering: pixelated; }
+    #wallet-usd { font-size: calc(13px * var(--fs)); font-weight: 600; }
+    #traits { position: fixed; top: 56px; right: 12px; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; pointer-events: none; }
+    #traits span { padding: 3px 9px; border-radius: 8px; background: var(--panel); font-size: calc(12px * var(--fs)); font-weight: 600; }
+    #headache {
+      position: fixed; inset: 0; pointer-events: none;
+      box-shadow: inset 0 0 90px 40px rgba(200, 20, 30, 0.85);
+      animation: throb 1.1s ease-in-out infinite;
+    }
+    #headache[hidden] { display: none; }
+    #ammo {
+      position: fixed; right: 16px; bottom: 16px; margin: 0; padding: 8px 12px; border-radius: 10px; text-align: right;
+      background: var(--panel); font: 700 calc(15px * var(--fs))/1.5 ui-monospace, Menlo, Consolas, monospace; color: #ffe9a8; pointer-events: none;
+    }
+    /* The spell bar: picked spell, mana, and spell effects on you (bottom left). */
+    .voice-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+    .voice-top label { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 200px; }
+    .voice-top input[type=range] { flex: 1; }
+    #voice-mic.off { opacity: 0.75; background: #5a2630; }
+    .voice-note { font-size: calc(13px * var(--fs)); opacity: 0.8; margin: 4px 0; min-height: 1em; }
+    #voice-list { max-height: min(50vh, 420px); overflow-y: auto; margin: 10px 0; }
+    .voice-row { display: grid; grid-template-columns: 14px minmax(70px, 1fr) minmax(80px, 2fr) 44px auto; gap: 10px; align-items: center;
+      padding: 8px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.05); margin-bottom: 6px; }
+    .voice-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+    .voice-pct { font: calc(13px * var(--fs)) ui-monospace, Menlo, Consolas, monospace; opacity: 0.85; text-align: right; }
+    .voice-near { font-size: calc(13px * var(--fs)); white-space: nowrap; display: flex; align-items: center; gap: 4px; }
+    .voice-dot { width: 12px; height: 12px; border-radius: 50%; background: #3fae5a; box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.3); }
+    .voice-dot.talking { background: #7dff9a; box-shadow: 0 0 8px 2px #7dff9a; }
+    .voice-dot.connecting { background: #c9a227; }
+    .voice-dot.quiet { background: #5c6270; }
+    .voice-empty { opacity: 0.7; padding: 8px 0; }
+    @media (max-width: 480px) { .voice-row { grid-template-columns: 14px 1fr 44px; } .voice-row input[type=range] { grid-column: 1 / -1; } .voice-near { grid-column: 1 / -1; } }
+    #voice-hud { position: fixed; left: 16px; bottom: 74px; padding: 5px 10px; border-radius: 8px; background: var(--panel); font-size: calc(14px * var(--fs)); pointer-events: none; }
+    #voice-hud[hidden] { display: none; }
+    #console {
+      position: fixed; left: 16px; bottom: 96px; width: min(600px, calc(100vw - 32px)); z-index: 20;
+      font: calc(14px * var(--fs)) ui-monospace, Menlo, Consolas, monospace;
+    }
+    #console[hidden] { display: none; }
+    #console-log { max-height: 40vh; overflow-y: auto; padding: 6px 10px; border-radius: 10px 10px 0 0; background: rgba(8, 12, 24, 0.55); }
+    #console-log:empty { display: none; }
+    #console-log div { white-space: pre-wrap; padding: 1px 0; color: #e8e4ff; }
+    #console-log .you { color: #9fb4d8; }
+    #console-log .error { color: #ff8a8a; }
+    #console-input {
+      width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.25); border-radius: 0 0 10px 10px;
+      background: rgba(0, 0, 0, 0.65); color: #fff; font: inherit; outline: none;
+    }
+    #console-log:empty + #console-input { border-radius: 10px; }
+    #spell {
+      position: fixed; left: 16px; bottom: 16px; min-width: 210px; padding: 8px 12px; border-radius: 10px; pointer-events: none;
+      background: var(--panel); font-size: calc(14px * var(--fs)); color: #e8e4ff;
+    }
+    #spell[hidden] { display: none; }
+    #spell span { opacity: 0.65; font-size: calc(12px * var(--fs)); margin-left: 6px; }
+    #spell .mana { position: relative; height: 12px; margin-top: 6px; border-radius: 6px; background: rgba(0, 0, 0, 0.45); overflow: hidden; }
+    #spell .mana div { height: 100%; background: linear-gradient(90deg, #3a5bff, #8f6bff); }
+    #spell .mana em { position: absolute; inset: 0; font: 700 calc(9px * var(--fs))/12px ui-monospace, Menlo, Consolas, monospace; text-align: center; font-style: normal; }
+    #spell small { display: block; margin-top: 4px; font-size: calc(12px * var(--fs)); color: #ffe9a8; }
+    #spell small.hint { color: #b9b4d8; opacity: 0.8; }
+    #ammo[hidden], #surge[hidden], #buildy[hidden], #flap[hidden] { display: none; }
+    #flap {
+      position: fixed; left: 50%; bottom: 106px; transform: translateX(-50%); padding: 5px 12px; border-radius: 10px; pointer-events: none;
+      background: rgba(10, 30, 60, 0.8); border: 1px solid #7fb8ff; color: #cfe6ff; font: 700 calc(14px * var(--fs)) system-ui, sans-serif;
+    }
+    #buildy {
+      position: fixed; left: 50%; bottom: 74px; transform: translateX(-50%); padding: 5px 12px; border-radius: 10px; pointer-events: none;
+      background: rgba(40, 32, 6, 0.8); border: 1px solid #f2c94c; color: #ffe08a; font: 700 calc(14px * var(--fs)) system-ui, sans-serif;
+    }
+    #buildy.switching { animation: surge 0.8s ease-in-out infinite alternate; }
+    #surge { position: fixed; inset: 0; pointer-events: none; box-shadow: inset 0 0 120px 30px rgba(155, 77, 255, 0.6); animation: surge 0.6s ease-in-out infinite alternate; }
+    #surge::after {
+      content: attr(data-left); position: absolute; top: 90px; left: 50%; transform: translateX(-50%);
+      font: 800 calc(20px * var(--fs)) system-ui, sans-serif; color: #e6c8ff; text-shadow: 0 0 12px #9b4dff, 0 2px 4px #000; letter-spacing: 0.08em;
+    }
+    @keyframes surge { from { opacity: 0.55; } to { opacity: 1; } }
+    /* The character sheet: a menu down the left half (80% opaque); the right half shows you, from the front. */
+    #sheet { position: fixed; top: 0; bottom: 0; left: 0; width: max(50%, min(100%, 420px)); box-sizing: border-box; overflow-y: auto;
+      padding: clamp(16px, 3vh, 32px) clamp(16px, 3vw, 40px); background: rgba(12, 16, 28, 0.8); z-index: 4; }
+    #sheet[hidden], #bestiary[hidden] { display: none; }
+    #bestiary { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(8, 12, 24, 0.55); }
+    .bestiary-card { width: min(680px, calc(100vw - 32px)); max-height: calc(100vh - 32px); display: flex; flex-direction: column; }
+    .bestiary-card header button {
+      font: 600 calc(15px * var(--fs)) system-ui, sans-serif; color: #2b2116; background: rgba(138, 106, 58, 0.18); border: 1px solid #8a6a3a; border-radius: 8px; padding: 5px 10px; cursor: pointer;
+    }
+    .bestiary-list { overflow-y: auto; margin-top: 8px; padding-right: 6px; }
+    .beast { display: grid; grid-template-columns: 88px 1fr; gap: 14px; padding: 10px 0; border-bottom: 1px dashed rgba(138, 106, 58, 0.45); }
+    .beast img, .beast .noimg { width: 88px; height: 88px; border-radius: 10px; background: rgba(43, 33, 22, 0.08); image-rendering: pixelated; }
+    .beast h4 { margin: 0; font-size: calc(18px * var(--fs)); }
+    .beast .tag { font: 600 calc(11px * var(--fs)) system-ui, sans-serif; letter-spacing: 0.08em; text-transform: uppercase; padding: 1px 6px; border-radius: 5px; margin-left: 6px; vertical-align: 2px; color: #fff; }
+    .beast .tag.Monster { background: #9a3b2b; } .beast .tag.Animal { background: #5c7a35; } .beast .tag.Pet { background: #a0662a; } .beast .tag.Bird { background: #3d6c9e; }
+    .beast p { margin: 4px 0; font-size: calc(14px * var(--fs)); line-height: 1.35; }
+    .beast small { display: block; font-size: calc(12px * var(--fs)); color: #6b4f28; }
+    .sheet-card { color: var(--text); }
+    body.sheet-open #spell, body.sheet-open #health, body.sheet-open #xp, body.sheet-open #voice-hud, body.sheet-open #washbar, body.sheet-open #ammo { display: none; } /* (the sheet has your health) */
+    .sheet-card header { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; border-bottom: 1px solid var(--panel-border); padding-bottom: 10px; }
+    .sheet-card h2 { margin: 0; font-size: calc(26px * var(--fs)); }
+    .sheet-card h3 { margin: 18px 0 6px; font-size: calc(13px * var(--fs)); letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
+    .sheet-level { opacity: 0.75; }
+    #sheet-close { float: right; margin: 0 0 8px 12px; } /* (outside the card, which redraws: a button that's replaced mid-click doesn't click) */
+    .sheet-hint { font-size: calc(12px * var(--fs)); opacity: 0.6; margin: 6px 0 0; }
+    .sheet-vitals { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 8px; font-size: calc(14px * var(--fs)); }
+    .stat { display: grid; grid-template-columns: 120px 36px 30px 90px 1fr; gap: 10px; align-items: center; padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+    .stat-name b { display: block; font-size: calc(15px * var(--fs)); }
+    .stat-name small { font-size: calc(11px * var(--fs)); opacity: 0.6; letter-spacing: 0.1em; }
+    .stat-value { font-size: calc(24px * var(--fs)); font-weight: 700; text-align: center; }
+    .stat-plus { text-align: center; }
+    .stat-plus small { font-size: calc(11px * var(--fs)); color: #8fe07a; }
+    .stat-plus button { width: 26px; height: 26px; padding: 0; border-radius: 6px; border: 1px solid #8fe07a; background: rgba(143, 224, 122, 0.15); color: #8fe07a; font: inherit; font-size: calc(15px * var(--fs)); font-weight: 700; cursor: pointer; }
+    .stat-plus button:hover { background: rgba(143, 224, 122, 0.3); }
+    .stat-spare { padding: 6px 10px; margin-bottom: 6px; border-radius: 6px; background: rgba(143, 224, 122, 0.12); color: #8fe07a; font-size: calc(13px * var(--fs)); }
+    .stat-bar { height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
+    .stat-bar div { height: 100%; background: linear-gradient(90deg, #b5532f, #d9a93a, #4f8a3c); }
+    .stat-about { font-size: calc(12.5px * var(--fs)); line-height: 1.35; }
+    .stat-about small { display: block; opacity: 0.65; font-style: italic; }
+    .verdict { font-weight: 700; }
+    .vtragic, .vmeh { color: #ff8a7a; }
+    .vgood, .vgreat, .vlegendary { color: #8fe07a; }
+    .trait b { display: block; }
+    .trait small, .sheet-traits > div, .sheet-conditions > div { font-size: calc(13px * var(--fs)); }
+    .trait { margin-bottom: 6px; }
+    .sheet-skills { display: grid; grid-template-columns: 1fr; gap: 2px; }
+    .skill { display: grid; grid-template-columns: minmax(120px, 1fr) 60px 2fr; gap: 10px; align-items: center; padding: 5px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+    .skill-points { font-weight: 700; text-align: right; }
+    .skill-none { opacity: 0.7; font-size: calc(13px * var(--fs)); }
+    .sheet-foot { margin: 18px 0 0; font-size: calc(12px * var(--fs)); opacity: 0.6; }
+    @keyframes throb {
+      0%, 100% { opacity: 0.25; }
+      18% { opacity: 1; }
+      32% { opacity: 0.45; }
+      46% { opacity: 0.85; }
+    }
+    .up { color: #4cd17a; }
+    .down { color: #ff6b6b; }
+    #rate-box { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+    #rate-chart { width: 300px; max-width: 55%; height: 44px; border-radius: 6px; background: rgba(0, 0, 0, 0.3); }
+    #rate-label { font: 700 calc(14px * var(--fs)) ui-monospace, Menlo, Consolas, monospace; }
+    .rate-note { margin: 0 0 10px; font-size: calc(12px * var(--fs)); opacity: 0.65; }
+    #washbar {
+      position: fixed; left: 50%; top: calc(50% + 22px); transform: translateX(-50%);
+      width: 80px; height: 6px; border-radius: 4px; background: rgba(0, 0, 0, 0.5);
+    }
+    #washbar[hidden] { display: none; }
+    #washbar-fill { height: 100%; width: 0; border-radius: 4px; background: #9fe0ff; }
+    /* The message log: every notification, bottom right above the ammo. */
+    #chat {
+      position: fixed; right: 16px; bottom: 122px; width: min(680px, calc(100vw - 32px)); max-height: min(38vh, 360px); overflow-y: auto; /* (above the hotbars) */
+      padding: 8px 12px; border-radius: 10px; background: rgba(10, 14, 26, 0.5); font-size: calc(16px * var(--fs)); line-height: 1.4;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8); transition: opacity 0.6s; scrollbar-width: thin; overscroll-behavior: contain;
+    }
+    #chat[hidden] { display: none; }
+    #chat.quiet { opacity: 0.6; }
+    #chat.behind-phone { visibility: hidden; }
+    #chat.off { display: none; }
+    #resume { position: fixed; inset: 0; display: grid; place-content: center; text-align: center; gap: 6px; cursor: pointer; background: rgba(8, 12, 24, 0.35); z-index: 3; }
+    #resume[hidden] { display: none; }
+    #resume div { font-size: calc(26px * var(--fs)); font-weight: 700; text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8); }
+    #resume small { opacity: 0.75; }
+    .chat-line { padding: 1px 0; overflow-wrap: anywhere; animation: chat-in 0.2s ease-out; }
+    .chat-count { opacity: 0.6; font-size: calc(13px * var(--fs)); }
+    .chat-line.xp, .chat-line.level, .chat-line.heal, .chat-line.flap { color: #9fe88a; }
+    .chat-line.coin, .chat-line.buy, .chat-line.delivery, .chat-line.order, .chat-line.vault { color: #ffd257; }
+    .chat-line.deny, .chat-line.lost, .chat-line.sick, .chat-line.stolen { color: #ff9a8a; }
+    .chat-line.text { color: #9fd4ff; }
+    .chat-line.death { color: #ff7a6a; font-weight: 600; }
+    .chat-line.event { color: #ffe08a; }
+    .chat-line.join, .chat-line.setting, .chat-line.teleport { color: #c9b8ff; }
+    .chat-line.sneeze, .chat-line.cough { font-style: italic; color: #e8e2d0; }
+    .chat-line.spell, .chat-line.surge { color: #e2b8ff; }
+    @keyframes chat-in { from { opacity: 0; translate: 6px 0; } }
+    #phone {
+      position: fixed; right: 12%; bottom: -30px; width: 200px; height: 380px; padding: 14px 10px 26px;
+      border-radius: 30px; background: #16181d; border: 2px solid #3a3f4a; rotate: -6deg;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6); animation: phone-up 0.25s ease-out;
+    }
+    #phone[hidden] { display: none; }
+    #phone-status {
+      display: flex; justify-content: space-between; padding: 0 10px 6px;
+      font: 600 calc(11px * var(--fs))/1 ui-monospace, Menlo, Consolas, monospace; color: #cfd5e0;
+    }
+    #phone-status b { color: #ffcf5a; }
+    #phone-body { position: relative; height: calc(100% - 17px); border-radius: 18px; overflow: hidden; }
+    #phone-screen { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: auto; }
+    /* Open (in use), the phone fills the middle third of the screen. */
+    #phone.interactive {
+      width: calc(100vw / 3); min-width: 300px; height: calc(100vh - 32px); rotate: 0deg;
+      left: 50%; right: auto; bottom: auto; top: 16px; transform: translateX(-50%); padding: 16px 14px 28px;
+    }
+    #phone.interactive #phone-app { font-size: calc(15px * var(--fs)); padding: 18px 16px 16px; }
+    #phone.interactive #phone-app h3 { font-size: calc(19px * var(--fs)); }
+    #phone.interactive #phone-app button { padding: 9px 14px; }
+    #phone.interactive .phone-hint { font-size: calc(13px * var(--fs)); }
+    #phone.interactive .phone-shop .tile-grid { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; }
+    #phone.interactive .phone-shop .pick-tile { padding: 7px 4px 5px; }
+    #phone.interactive .phone-shop .pick-tile canvas { width: 40px; height: 40px; }
+    #phone.interactive .phone-shop .tile-info { font-size: calc(14px * var(--fs)); }
+    #phone.interactive .phone-shop .tile-info small { font-size: calc(12.5px * var(--fs)); }
+    #phone.interactive .shop-wallet { font-size: calc(14px * var(--fs)); }
+    #phone.interactive .shop-orders { max-height: 120px; font-size: calc(13px * var(--fs)); }
+    #phone.interactive #phone-status { font-size: calc(13px * var(--fs)); }
+    #phone-app { position: absolute; inset: 0; display: flex; flex-direction: column; padding: 14px 12px 12px; font-size: calc(13px * var(--fs)); }
+    #phone-app.sp-note { justify-content: flex-end; text-align: center; text-shadow: 0 1px 4px #000; font-size: calc(11px * var(--fs)); }
+    #phone.interactive #phone-app { background: rgba(10, 14, 26, 0.55); }
+    #phone-app > div:first-child { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+    #phone-app h3 { margin: 0 0 4px; font-size: calc(15px * var(--fs)); }
+    #phone-app button { padding: 7px 10px; border-radius: 10px; }
+    #phone-app button:disabled { opacity: 0.45; cursor: default; }
+    .phone-hint { font-size: calc(11.5px * var(--fs)); opacity: 0.8; line-height: 1.35; }
+    .badge { display: inline-block; min-width: 18px; margin-left: 6px; padding: 1px 5px; border-radius: 9px; background: #e5484d; font-size: calc(11px * var(--fs)); text-align: center; }
+    #phone-app > .phone-shop { gap: 6px; }
+    .phone-shop h3 { letter-spacing: 3px; font-weight: 900; color: #ffb347; }
+    .phone-shop .tile-grid { grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 4px; }
+    .phone-shop .pick-tile { padding: 5px 2px 4px; }
+    .phone-shop .pick-tile canvas { width: 28px; height: 28px; }
+    .phone-shop .tile-info { flex-wrap: wrap; font-size: calc(12px * var(--fs)); }
+    .phone-shop .tile-info small { font-size: calc(11px * var(--fs)); }
+    .shop-wallet { font: 700 calc(12px * var(--fs)) ui-monospace, Menlo, Consolas, monospace; color: #ffd257; }
+    .shop-orders { display: flex; flex-direction: column; gap: 2px; max-height: 80px; overflow-y: auto; font-size: calc(11.5px * var(--fs)); }
+    .shop-order { display: flex; justify-content: space-between; opacity: 0.85; font-family: ui-monospace, Menlo, Consolas, monospace; }
+    .phone-footer { display: flex; justify-content: space-between; gap: 8px; margin-top: 8px; }
+    #map { position: fixed; inset: 0; display: grid; place-items: center; align-content: center; gap: 8px; background: rgba(8, 12, 24, 0.55); pointer-events: none; }
+    #map[hidden] { display: none; }
+    #map-canvas { width: min(84vh, 84vw); height: min(84vh, 84vw); border-radius: 14px; border: 2px solid var(--panel-border); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5); }
+    .map-hint { font-size: calc(13px * var(--fs)); opacity: 0.85; text-shadow: 0 1px 4px #000; }
+    @keyframes phone-up { from { translate: 0 200px; } }
+    #hurt {
+      position: fixed; inset: 0; pointer-events: none; opacity: 0;
+      background: radial-gradient(ellipse at center, transparent 45%, rgba(190, 20, 20, 0.75));
+    }
+    #heal {
+      position: fixed; inset: 0; pointer-events: none; opacity: 0;
+      background: radial-gradient(ellipse at center, transparent 50%, rgba(60, 200, 90, 0.55));
+    }
+    #death {
+      position: fixed; inset: 0; display: grid; place-items: center; pointer-events: none;
+      font-size: calc(44px * var(--fs)); font-weight: 700; text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6); text-align: center;
+    }
+    #death[hidden] { display: none; }
+    #death small { display: block; font-size: calc(16px * var(--fs)); font-weight: 400; opacity: 0.8; }
+
+    #overlay {
+      position: fixed; inset: 0; display: grid; place-items: safe center; padding: 16px; overflow-y: auto;
+      background: radial-gradient(circle at 50% 40%, rgba(20, 30, 55, 0.55), rgba(8, 12, 24, 0.85));
+    }
+    #overlay[hidden] { display: none; }
+    /* The title screen fills the window too (80% opaque over the world), its parts centred down the middle. */
+    #overlay { display: flex; padding: 0; background: rgba(12, 16, 28, 0.8); }
+    #overlay > .card {
+      width: 100%; min-height: 100%; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 6px; padding: clamp(16px, 4vh, 48px) clamp(16px, 4vw, 56px); border: none; border-radius: 0; background: transparent;
+    }
+    .title-buttons { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; width: 100%; }
+    .title-buttons button { margin: 0; }
+    .title-buttons #play, .title-buttons #fullscreen { flex: 1 1 260px; padding: 14px 20px; }
+    .title-buttons #new-world, .title-buttons #open-client, .title-buttons #open-settings { flex: 1 1 200px; margin: 0; }
+    #overlay #identity, #overlay #gfx-warning, #overlay #boot-error { width: 100%; box-sizing: border-box; }
+    @media (min-width: 760px) {
+      #overlay #identity { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; align-items: start; }
+      #overlay #identity #net-status, #overlay #identity small { grid-column: 1 / -1; }
+    }
+    .card {
+      width: min(420px, calc(100vw - 32px)); padding: 28px; border-radius: 18px; text-align: center;
+      background: var(--panel); border: 1px solid var(--panel-border);
+    }
+    /* The logo: one word that scales with the window's width (every part is in em of --logo). */
+    h1 { --logo: min(161px, 5.6vw); margin: 0 0 10px; line-height: 1; font-weight: 400; font-size: var(--logo); cursor: pointer; user-select: none;
+      display: flex; justify-content: center; align-items: center; white-space: nowrap; }
+    /* Each load picks one look at random (the script after the h1 sets h1[data-font]). */
+    h1 .t-title { font: 1em/1 "Uncial Antiqua", Georgia, serif; color: #c9a45c; text-shadow: 0 0.04em 0.09em rgba(0, 0, 0, 0.6); }
+    h1[data-font="pixel"] .t-title {
+      font: 700 0.826em/1 Silkscreen, ui-monospace, monospace; text-transform: uppercase; color: #dedad2; letter-spacing: 0.02em;
+      text-shadow: 0.026em 0.026em 0 #6d6a66, 0.053em 0.053em 0 #55524f, 0.079em 0.079em 0 #3f3d3b, 0.105em 0.105em 0 #2b2a29, 0.13em 0.16em 0.16em rgba(0, 0, 0, 0.55);
+    }
+    h1[data-font="wood"] .t-title {
+      font: 400 1.1em/1 "Lilita One", "Arial Black", Impact, sans-serif; text-transform: uppercase; letter-spacing: 0.02em;
+      background:
+        repeating-linear-gradient(100deg, rgba(120, 60, 10, 0) 0 0.08em, rgba(120, 60, 10, 0.22) 0.08em 0.12em, rgba(120, 60, 10, 0) 0.12em 0.22em),
+        linear-gradient(180deg, #ffe58a 0%, #f4bd3c 45%, #e09422 70%, #b8681a 100%);
+      -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: none;
+      -webkit-text-stroke: 0.042em #4a2a0c; paint-order: stroke fill;
+      filter: drop-shadow(0 0.05em 0 #2e1906) drop-shadow(0 0.1em 0.13em rgba(0, 0, 0, 0.45));
+    }
+    /* Quake-ish: Metamorphous capitals in rusted brown metal with a hard bevel and a grimy shadow. */
+    h1[data-font="quake"] .t-title {
+      font: 400 1.05em/1 Metamorphous, Georgia, serif; text-transform: uppercase; letter-spacing: 0.02em;
+      background:
+        repeating-linear-gradient(8deg, rgba(0, 0, 0, 0) 0 0.05em, rgba(0, 0, 0, 0.18) 0.05em 0.07em),
+        linear-gradient(180deg, #a8673a 0%, #7a4422 40%, #5a2f17 60%, #8c5530 85%, #3d1f0e 100%);
+      -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: none;
+      -webkit-text-stroke: 0.02em #1c0e06; paint-order: stroke fill;
+      filter: drop-shadow(0 -0.015em 0 rgba(255, 190, 130, 0.35)) drop-shadow(0 0.06em 0 #140904) drop-shadow(0 0.1em 0.15em rgba(0, 0, 0, 0.6));
+    }
+    .tag { margin: 0 0 20px; opacity: 0.75; }
+    /* Every button in the game has the same font size (the Font size client setting scales it). */
+    button {
+      font: inherit; font-size: calc(15px * var(--fs)); font-weight: 600; padding: 10px 18px; border-radius: 10px; cursor: pointer;
+      border: 1px solid var(--panel-border); color: var(--text); background: rgba(255, 255, 255, 0.08);
+    }
+    #play { background: var(--accent); color: #1b1b1b; border: none; padding: 12px 32px; }
+    #new-world { margin-top: 10px; }
+    #new-world[hidden] { display: none; }
+    #open-settings { margin-top: 10px; }
+    /* Settings fill the whole window, over the game at 80% opacity; only the tab's content scrolls. */
+    #client { position: fixed; inset: 0; display: flex; background: rgba(12, 16, 28, 0.8); z-index: 4; }
+    #client[hidden] { display: none; }
+    #client .card {
+      width: 100%; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; text-align: left;
+      padding: clamp(16px, 3vh, 32px) clamp(16px, 4vw, 56px); border: none; border-radius: 0; background: transparent;
+    }
+    #client header { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+    #client h2 { margin: 0; }
+    #client h3 { margin: 16px 0 6px; font-size: calc(13px * var(--fs)); letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
+    .client-top { display: flex; gap: 8px; align-items: center; }
+    .client-top .primary { background: var(--accent); color: #1a1406; border-color: transparent; font-weight: 700; }
+    .client-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 14px 0 10px; border-bottom: 1px solid var(--panel-border); }
+    .client-tabs button { border-radius: 9px 9px 0 0; border-bottom: none; background: transparent; opacity: 0.75; }
+    .client-tabs button.on { background: rgba(255, 255, 255, 0.1); opacity: 1; box-shadow: inset 0 -2px 0 var(--accent); }
+    /* A tab's settings flow into as many columns as fit; headings, the key list and the voice list span them all. */
+    #client section { flex: 1; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr));
+      gap: 4px 40px; align-content: start; padding-right: 6px; }
+    #client section[hidden] { display: none; }
+    #client section > h3, #client section > dl, #client section > #voice-list, #client section > .voice-top,
+    #client section > .voice-note, #client section > .client-note.wide { grid-column: 1 / -1; }
+    .client-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 8px 0 2px; }
+    .client-row b { color: var(--accent); font: 700 calc(13px * var(--fs)) ui-monospace, Menlo, Consolas, monospace; }
+    .client-row input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); }
+    .client-check { display: flex; align-items: center; gap: 8px; padding: 8px 0; cursor: pointer; }
+    .client-check input { width: 18px; height: 18px; accent-color: var(--accent); flex: none; }
+    .client-note { display: block; opacity: 0.65; font-size: calc(12px * var(--fs)); margin-bottom: 6px; }
+    .client-hint { font-size: calc(12px * var(--fs)); opacity: 0.55; align-self: center; max-width: 260px; text-align: right; }
+    @media (max-width: 700px) { .client-hint { display: none; } }
+    #client-keys { display: grid; grid-template-columns: max-content 1fr; gap: 8px 14px; margin: 0; font-size: calc(14px * var(--fs)); }
+    @media (min-width: 1000px) { #client-keys { grid-template-columns: max-content 1fr max-content 1fr; column-gap: 18px 40px; } }
+    #voice-list { max-height: none; }
+    #client-keys dt { font: 700 calc(13px * var(--fs)) ui-monospace, Menlo, Consolas, monospace; color: var(--accent); white-space: nowrap; }
+    #client-keys dd { margin: 0; opacity: 0.9; }
+    #settings-note { margin: 0 0 12px; font-size: calc(13px * var(--fs)); opacity: 0.75; }
+    .setting { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 8px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.1); cursor: pointer; }
+    .setting b { color: var(--accent); font: 700 calc(13px * var(--fs)) ui-monospace, Menlo, Consolas, monospace; text-align: right; }
+    .setting input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); }
+    .setting input[type=checkbox] { grid-row: 1; grid-column: 2; justify-self: end; width: 18px; height: 18px; accent-color: var(--accent); }
+    .setting:has(input[type=checkbox]) b { display: none; }
+    .setting small { grid-column: 1 / -1; opacity: 0.65; font-size: calc(12px * var(--fs)); }
+    #settings-search {
+      width: 100%; box-sizing: border-box; font: inherit; font-size: calc(15px * var(--fs)); padding: 8px 12px; border-radius: 9px; color: var(--text);
+      background: rgba(255, 255, 255, 0.08); border: 1px solid var(--panel-border); outline: none;
+    }
+    #settings-search:focus { border-color: var(--accent); }
+    #settings-none { padding: 14px 0; opacity: 0.6; }
+    .setting[hidden], .settings-group[hidden] { display: none; }
+    .settings-group { margin: 16px 0 2px; font-size: calc(13px * var(--fs)); letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
+    .settings-buttons { display: flex; justify-content: space-between; gap: 8px; margin-top: 14px; }
+    #identity {
+      margin: 18px 0 0; padding: 12px; border-radius: 12px; text-align: left;
+      background: rgba(255, 255, 255, 0.05); border: 1px solid var(--panel-border);
+    }
+    #net-status { font-size: calc(13px * var(--fs)); margin-bottom: 10px; color: #9fe0ff; }
+    #net-status.error { color: #ff9a9a; }
+    #identity label { display: flex; align-items: center; gap: 10px; font-size: calc(14px * var(--fs)); }
+    .title-buttons[hidden], #account[hidden], #account-new[hidden], #account-recover[hidden], #player-name-row[hidden] { display: none; }
+    #players-list { display: grid; gap: 6px; }
+    .player-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; padding: 8px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.05); }
+    .player-row b { font-size: calc(15px * var(--fs)); }
+    .player-row small { display: block; opacity: 0.7; font-size: calc(12px * var(--fs)); }
+    .player-row .tags span { display: inline-block; margin-right: 6px; padding: 1px 6px; border-radius: 6px; font-size: calc(11px * var(--fs)); background: rgba(255, 255, 255, 0.1); }
+    .player-row .tags .on { background: rgba(95, 200, 120, 0.3); }
+    .player-row .tags .bad { background: rgba(220, 80, 70, 0.35); }
+    .player-row .acts { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+    .player-row .acts button { padding: 5px 9px; }
+    #players-tab[hidden] { display: none; }
+    #account p { margin: 0 0 8px; font-size: calc(13px * var(--fs)); opacity: 0.85; }
+    #account .primary { background: var(--accent); color: #1b1b1b; border-color: transparent; }
+    #player-name {
+      flex: 1; font: inherit; padding: 7px 10px; border-radius: 8px; color: var(--text);
+      background: rgba(0, 0, 0, 0.3); border: 1px solid var(--panel-border);
+    }
+    #identity .id-buttons { display: flex; gap: 8px; margin-top: 10px; }
+    #identity label.volume { margin-top: 10px; }
+    #volume { flex: 1; accent-color: var(--accent); }
+    #identity .id-buttons button { padding: 7px 12px; }
+    #identity small { display: block; margin-top: 8px; font-size: calc(11.5px * var(--fs)); opacity: 0.65; line-height: 1.4; }
+    #fullscreen { margin-left: 6px; padding: 12px 18px; }
+    #boot-error {
+      margin: 16px 0 0; padding: 10px 12px; border-radius: 10px; text-align: left; font-size: calc(13px * var(--fs));
+      background: rgba(198, 47, 61, 0.25); border: 1px solid rgba(255, 107, 107, 0.6);
+    }
+    #boot-error[hidden] { display: none; }
+    #gfx-warning {
+      margin: 16px 0 0; padding: 10px 12px; border-radius: 10px; text-align: left; font-size: calc(13px * var(--fs)); line-height: 1.5;
+      background: rgba(255, 207, 90, 0.14); border: 1px solid rgba(255, 207, 90, 0.55);
+    }
+    #gfx-warning[hidden], #gfx-warning [hidden] { display: none; }
+    #gfx-warning ol { margin: 6px 0 0; padding-left: 20px; }
+    #gfx-warning code {
+      padding: 1px 5px; border-radius: 5px; background: rgba(0, 0, 0, 0.35); cursor: copy;
+      font: calc(12px * var(--fs)) ui-monospace, Menlo, Consolas, monospace; word-break: break-all;
+    }
+    #gfx-warning code[data-copied]::after { content: " ✓ copied"; color: #7ee08f; }
+    #boot-error code { display: block; margin-top: 6px; font-size: calc(11px * var(--fs)); opacity: 0.8; word-break: break-word; }
+    dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; text-align: left; margin: 22px 0 0; font-size: calc(14px * var(--fs)); }
+    dt { font-family: ui-monospace, Menlo, Consolas, monospace; color: var(--accent); }
+    dd { margin: 0; opacity: 0.85; }
+  </style>
+  <script>
+    // If the game code fails to load (most often a stale browser cache right after an update),
+    // say so on the start screen instead of leaving a Play button that does nothing.
+    window.showBootError = (detail) => {
+      if (window.game) return;
+      const box = document.getElementById('boot-error');
+      if (!box) return;
+      box.hidden = false;
+      if (detail) box.querySelector('code').textContent = detail;
+    };
+    window.addEventListener('error', (e) => window.showBootError(e.message));
+  </script>
+  <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+  </script>
+</head>
+<body>
+  <div id="hurt"></div>
+  <div id="heal"></div>
+  <div id="crosshair"></div>
+  <div id="scope" hidden><div id="scope-zoom"></div></div>
+  <pre id="info" hidden></pre>
+  <div id="hotbar-left" class="hotbar"></div><div id="hotbar-right" class="hotbar"></div>
+  <div id="xp"><div id="xp-fill"></div><div id="level">0</div></div>
+  <div id="health"><div id="health-fill"></div></div>
+  <div id="printer" hidden>
+    <div class="card">
+      <header><h2>3D Printer</h2><span id="printer-wallet"><span id="printer-balance">0</span></span></header>
+      <div id="rate-box"><canvas id="rate-chart" width="300" height="44"></canvas><span id="rate-label"></span></div>
+      <p class="rate-note">Prices are in dollars; you pay in Zcash at the rate when you press Print. The rate is wild.</p>
+      <div id="recipes"></div>
+      <div id="printer-progress"><div id="printer-fill"></div></div>
+      <div id="printer-status"></div>
+      <button id="printer-close">Back to game</button>
+    </div>
+  </div>
+  <div id="shop" hidden>
+    <div class="card">
+      <header><h2 id="shop-name">Shop</h2><span id="shop-wallet"></span></header>
+      <p id="shop-greeting"></p>
+      <div id="shop-wares"></div>
+      <div id="shop-status"></div>
+      <button id="shop-close">Back to game</button>
+    </div>
+  </div>
+  <div id="creator" hidden>
+    <div class="card">
+      <header><h2>New character</h2><button id="creator-cancel" type="button">Back</button></header>
+      <div class="creator-body">
+        <div class="creator-left">
+          <canvas id="creator-preview" width="220" height="300"></canvas>
+          <label class="creator-name">Name <input id="creator-name" maxlength="20" autocomplete="off" spellcheck="false" placeholder="Pick a name"></label>
+        </div>
+        <div class="creator-right">
+          <h3>Stats <span id="creator-points"></span></h3>
+          <div id="creator-stats"></div>
+          <h3>Look</h3>
+          <div id="creator-look"></div>
+        </div>
+      </div>
+      <div id="creator-status"></div>
+      <button id="creator-make" type="button" class="primary">Create and play</button>
+    </div>
+  </div>
+  <div id="kitchen" hidden>
+    <div class="card">
+      <header><h2 id="kitchen-name">Range</h2><span id="kitchen-busy"></span></header>
+      <p id="kitchen-greeting"></p>
+      <div id="kitchen-items"></div>
+      <div id="kitchen-status"></div>
+      <button id="kitchen-close">Back to game</button>
+    </div>
+  </div>
+  <div id="crafting" hidden>
+    <div class="card">
+      <header><h2>🔨 Crafting</h2><span id="crafting-hint">R to close</span></header>
+      <p class="recipes-note">Make things by hand, anywhere. Leaves sometimes drop sticks, grass sometimes plant fiber; stone heads are knapped from stone blocks.</p>
+      <div id="crafting-items"></div>
+      <div id="crafting-status"></div>
+      <button id="crafting-close">Back to game</button>
+    </div>
+  </div>
+  <div id="recipes-book" hidden>
+    <div class="card">
+      <header><h2>📖 Recipe book</h2><button id="recipes-close" type="button">Close (K)</button></header>
+      <p class="recipes-note">Everything you can make, and where. Bold ingredients are ones you have enough of.</p>
+      <div id="recipes-list"></div>
+    </div>
+  </div>
+  <div id="pottery" hidden>
+    <div class="card">
+      <header><h2 id="pottery-name">Pottery Wheel</h2><span id="pottery-have"></span></header>
+      <p id="pottery-greeting"></p>
+      <div id="pottery-items"></div>
+      <div id="pottery-status"></div>
+      <button id="pottery-close">Back to game</button>
+    </div>
+  </div>
+  <div id="vault" hidden>
+    <div class="card">
+      <header><h2>❄ Cold Wallet</h2></header>
+      <p class="rate-note">Zcash you carry is lost when you die. Zcash in cold storage is safe, and every Cold Wallet opens the same storage: yours.</p>
+      <div class="vault-row"><span>Carrying</span><b id="vault-hot"></b></div>
+      <div class="vault-row"><span>Cold storage</span><b id="vault-cold"></b></div>
+      <div class="vault-move">
+        <input id="vault-amount" type="number" min="0.01" step="0.01" placeholder="Amount (ZEC)" autocomplete="off">
+        <button id="vault-deposit">Store ↓</button>
+        <button id="vault-withdraw">Take ↑</button>
+      </div>
+      <div class="vault-move">
+        <button id="vault-deposit-all">Store everything</button>
+        <button id="vault-withdraw-all">Take everything</button>
+      </div>
+      <div id="vault-status"></div>
+      <button id="vault-close">Back to game</button>
+    </div>
+  </div>
+  <div id="wallet"><span id="wallet-count">0</span><span id="wallet-usd"></span></div>
+  <div id="traits"></div>
+  <div id="sheet" hidden><button id="sheet-close" type="button" data-close>Back to game (I)</button><div class="sheet-card"></div></div>
+  <div id="bestiary" hidden>
+    <div class="sheet-card bestiary-card">
+      <header><h2>Bestiary</h2><button id="bestiary-close">Close (J)</button></header>
+      <div class="bestiary-list"></div>
+    </div>
+  </div>
+  <pre id="ammo" hidden></pre>
+  <div id="spell"></div>
+  <div id="voice-hud" hidden></div>
+  <div id="console" hidden><div id="console-log"></div><input id="console-input" spellcheck="false" autocomplete="off" maxlength="200"></div>
+  <div id="buildy" hidden></div>
+  <div id="flap" hidden></div>
+  <div id="surge" hidden></div>
+  <div id="headache" hidden></div>
+  <div id="washbar" hidden><div id="washbar-fill"></div></div>
+  <div id="chat" hidden></div>
+  <div id="resume" hidden><div>Click to return to the game</div><small>Esc: main menu</small></div>
+  <div id="picker" hidden>
+    <h2><kbd>Q</kbd><span data-title>Left hand</span></h2>
+    <input type="text" placeholder="Search your inventory…" autocomplete="off" spellcheck="false">
+    <div data-hint></div>
+    <div data-list></div>
+    <div data-info></div>
+  </div>
+  <div id="phone" hidden>
+    <div id="phone-status"><span id="phone-clock">12:00</span><b>&#9654;&#9654; 10&times;</b></div>
+    <div id="phone-body">
+      <canvas id="phone-screen" width="64" height="120"></canvas>
+      <div id="phone-app"></div>
+    </div>
+  </div>
+  <div id="map" hidden>
+    <canvas id="map-canvas" width="640" height="640"></canvas>
+    <div class="map-hint">Everyone's phones · you're the yellow arrow · 🛏 your bed · north is up · Tab to close</div>
+  </div>
+  <div id="death" hidden><div>You died<small>Respawning…</small></div></div>
+
+  <div id="client" hidden>
+    <div class="card">
+      <header><h2>Settings</h2><div class="client-top"><span class="client-hint">Esc: back</span><button id="client-menu" type="button">Main menu</button><button id="client-resume" type="button" class="primary">Resume</button></div></header>
+      <nav class="client-tabs">
+        <button data-tab="controls">⌨️ Controls</button><button data-tab="sound">🔊 Sound</button><button data-tab="voice">🎙 Voice</button><button data-tab="display">🖥 Display</button><button data-tab="graphics">✨ Graphics</button><button data-tab="server">🛠 Server</button><button data-tab="players" id="players-tab" hidden>👥 Players</button>
+      </nav>
+      <section data-panel="controls">
+        <label class="client-row">Mouse sensitivity <b data-out="sensitivity"></b><input data-pref="sensitivity" type="range" min="0.2" max="3" step="0.05"></label>
+        <label class="client-check"><input data-pref="invertY" type="checkbox"> Invert mouse up/down</label>
+        <h3>Keyboard and mouse</h3>
+        <dl id="client-keys"></dl>
+      </section>
+      <section data-panel="sound">
+        <label class="client-row">Volume <b data-out="volume"></b><input id="volume" type="range" min="0" max="100" step="1"></label>
+        <label class="client-check"><input id="muted" type="checkbox"> Mute everything (M)</label>
+        <label class="client-check hrtf"><input id="hrtf" type="checkbox"> 🎧 3D sound for headphones: realistic direction, above and below too (voices and game sounds)</label>
+        <div class="client-item"><label class="client-row">Room echo <b data-out="echo"></b><input data-pref="echo" type="range" min="0" max="2" step="0.05"></label><small class="client-note">How much rooms, halls, caves and streets echo (100% is normal).</small></div>
+        <label class="client-check"><input data-pref="ambient" type="checkbox"> Birds by day and crickets at night</label>
+      </section>
+      <section data-panel="voice">
+        <div class="voice-top">
+          <button id="voice-mic" type="button">🎙 Mic on</button>
+          <label>Voice volume <input id="voice-master" type="range" min="0" max="200" step="5" value="100"> <span id="voice-master-pct" class="voice-pct">100%</span></label>
+        </div>
+        <div id="voice-mic-note" class="voice-note"></div>
+        <div id="voice-range-note" class="voice-note"></div>
+        <div id="voice-list"></div>
+        <small class="client-note wide">Hold Z to whisper, X to shout. V opens this tab. 3D headphone sound is under Sound.</small>
+      </section>
+      <section data-panel="display">
+        <div class="client-item"><label class="client-row">Font size <b data-out="fontScale"></b><input data-pref="fontScale" type="range" min="0.5" max="3" step="0.05"></label><small class="client-note">All the text: menus, messages, labels (100% is the old size).</small></div>
+        <label class="client-row">Field of view <b data-out="fov"></b><input data-pref="fov" type="range" min="50" max="110" step="1"></label>
+        <label class="client-check"><input data-pref="shake" type="checkbox"> Camera shake (explosions, guns, sneezes)</label>
+        <label class="client-check"><input data-pref="info" type="checkbox"> Info panel: fps, position, mobs (F3)</label>
+        <label class="client-check"><input data-pref="chat" type="checkbox"> Message log (bottom right)</label>
+      </section>
+      <section data-panel="graphics">
+        <div class="client-item"><label class="client-row">Render distance <b data-out="renderDistance"></b><input data-pref="renderDistance" type="range" min="3" max="12" step="1"></label><small class="client-note">How far you can see, in chunks of 16 blocks. Further looks better but needs a faster computer.</small></div>
+        <div class="client-item"><label class="client-row">Resolution <b data-out="resScale"></b><input data-pref="resScale" type="range" min="0.35" max="1" step="0.05"></label><small class="client-note">Lower draws fewer pixels: blurrier, but faster on slow graphics.</small></div>
+      </section>
+      <section data-panel="server">
+        <p id="settings-note" class="client-note wide"></p>
+        <input id="settings-search" placeholder="Search server settings…" autocomplete="off" spellcheck="false">
+        <div id="settings-list"></div>
+        <div id="settings-none" hidden>No settings match.</div>
+        <div class="settings-buttons"><button id="settings-reset" type="button">Reset to defaults</button></div>
+      </section>
+      <section data-panel="players">
+        <p class="client-note wide">Everyone with a Player on this world. You're an Admin: you can make a recovery code for someone who lost their Player (they type it in under Recover Player), rename, kick, ban or delete Players, and make other Players Admins.</p>
+        <div id="players-note" class="voice-note"></div>
+        <div id="players-list"></div>
+      </section>
+    </div>
+  </div>
+  <div id="overlay">
+    <div class="card">
+      <h1 aria-label="Game">
+        <span class="t-title" aria-hidden="true">Game</span>
+      </h1>
+      <script>
+        // A different title look on every load, in one of the old logo's fonts or a Quake-like one.
+        (() => {
+          // Clicking the title steps through them all.
+          const fonts = ['uncial', 'pixel', 'wood', 'quake'];
+          const h1 = document.currentScript.previousElementSibling;
+          h1.dataset.font = fonts[Math.floor(Math.random() * fonts.length)];
+          h1.addEventListener('click', () => {
+            h1.dataset.font = fonts[(fonts.indexOf(h1.dataset.font) + 1) % fonts.length];
+          });
+        })();
+      </script>
+      <div class="title-buttons">
+        <button id="play">Play</button>
+        <button id="fullscreen">Play fullscreen</button>
+        <button id="new-world">New world</button>
+        <button id="open-client">Settings</button>
+        <button id="open-recipes">📖 Recipes</button>
+        <button id="open-settings">Server settings</button>
+      </div>
+      <div id="identity">
+        <div id="net-status">Connecting…</div>
+        <label id="player-name-row">Your name <input id="player-name" maxlength="20" autocomplete="off" spellcheck="false"></label>
+        <div id="account" hidden>
+          <div id="account-new">
+            <label>Your name <input id="account-name" maxlength="20" autocomplete="off" spellcheck="false" placeholder="Pick a name"></label>
+            <div class="id-buttons">
+              <button id="account-create" type="button" class="primary">Create Player</button>
+              <button id="account-recover-open" type="button">Recover Player</button>
+            </div>
+          </div>
+          <div id="account-recover" hidden>
+            <p>Lost your Player (a new browser, or cleared site data)? Contact the Admin of this server: they can give you a recovery code to type in here.</p>
+            <label>Recovery code <input id="account-code" maxlength="12" autocomplete="off" spellcheck="false" placeholder="ABCD-EFGH"></label>
+            <div class="id-buttons">
+              <button id="account-recover-go" type="button" class="primary">Recover</button>
+              <button id="account-back" type="button">Back</button>
+            </div>
+          </div>
+        </div>
+        <div id="charpick" hidden>
+          <h3>Your characters</h3>
+          <div id="charpick-list"></div>
+          <div class="id-buttons"><button id="charpick-new" type="button" class="primary">New character</button></div>
+        </div>
+        <div class="id-buttons" id="switch-row" hidden><button id="switch-char" type="button">Switch character</button></div>
+        <small>Your Player's key is kept in this browser, so you're signed in automatically. Lost it? The server's Admin can give you a recovery code.</small>
+      </div>
+      <div id="gfx-warning" hidden>
+        <b>⚠ Graphics limited by your browser.</b> It only allows WebGL up to <span data-limit></span> pixels,
+        so Game is drawing <span data-actual></span> pixels wide instead of <span data-wanted></span> (a bit blurrier).
+        <div data-firefox>
+          This is Firefox's fingerprinting protection (on by default in LibreWolf). To turn it off for this game only:
+          <ol>
+            <li>Open <code data-copy>about:config</code> in a new tab and accept the warning.</li>
+            <li>Search for <code data-copy>privacy.resistFingerprinting.exemptedDomains</code></li>
+            <li>Add <code data-copy data-host></code> to its value (comma-separated if it already lists sites).</li>
+            <li>Also check <code data-copy>webgl.min_capability_mode</code> is <code>false</code>.</li>
+            <li>Reload this page.</li>
+          </ol>
+          Fingerprinting protection stays on for every other site.
+        </div>
+        <div data-other>Your browser or graphics driver caps WebGL size. A smaller window or lower display scaling will look sharper.</div>
+      </div>
+      <div id="boot-error" hidden>
+        <b>The game didn't load.</b> Try a hard refresh: Ctrl+Shift+R (Cmd+Shift+R on a Mac).
+        <code>Still loading, or no error reported yet.</code>
+      </div>
+      <p class="tag">In game: Esc for this menu · T to chat · P to change the camera · Settings has every key</p>
+    </div>
+  </div>
+
+  <script type="module" src="src/main.js"></script>
+  <script>
+    document.getElementById('play').addEventListener('click', () => {
+      if (!window.game && !window.gameConnecting) window.showBootError();
+    });
+  </script>
+</body>
+</html>

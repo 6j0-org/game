@@ -1,0 +1,10 @@
+{
+  "name": "game",
+  "private": true,
+  "description": "A small voxel sandbox game with an optional multiplayer server",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server/index.js"
+  }
+}
