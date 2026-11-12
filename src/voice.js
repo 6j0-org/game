@@ -50,7 +50,6 @@ export class Voice {
     this.ctx = null;
     this.workletReady = Promise.resolve(false);
     this.updateT = 0;
-    this.hrtf = false; // HRTF panning for nearby voices (the "3D sound for headphones" option)
     this.occlusion = null; // (from, to) => how much wall is between (main.js sets it)
     this.acoustics = null; // the space you're in, for nearby voices
     this.prefs = { master: 1, micOn: true, players: {} };
@@ -216,7 +215,7 @@ export class Voice {
     peer.lp = this.ctx.createBiquadFilter(); // walls (nearby-only voices)
     peer.lp.type = 'lowpass';
     peer.lp.frequency.value = 20000;
-    peer.panner = new PannerNode(this.ctx, { panningModel: this.hrtf ? 'HRTF' : 'equalpower', distanceModel: 'linear', rolloffFactor: 0 }); // direction only: volume is ours
+    peer.panner = new PannerNode(this.ctx, { panningModel: 'HRTF', distanceModel: 'linear', rolloffFactor: 0 }); // direction only: volume is ours
     if (peer.shift) peer.src.connect(peer.shift).connect(peer.lp).connect(peer.gain);
     else peer.src.connect(peer.lp).connect(peer.gain);
     peer.src.connect(peer.analyser); // how loud they're talking (for the speaking light), before your volume
@@ -238,11 +237,6 @@ export class Voice {
     if (near) peer.gain.connect(peer.panner).connect(this.acoustics.input);
     else peer.gain.connect(this.ctx.destination);
     if (!near) { peer.lp.frequency.value = 20000; peer.muffle = 1; }
-  }
-
-  setHrtf(on) {
-    this.hrtf = !!on;
-    for (const peer of this.peers.values()) if (peer.panner) peer.panner.panningModel = on ? 'HRTF' : 'equalpower';
   }
 
   /** The "Room echo" setting, for nearby voices too. */

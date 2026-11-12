@@ -65,6 +65,8 @@ export class Player extends Body {
     this.spells = []; // the spells you know (learned by reading their scrolls: spells.js)
     this.hotbars = { left: Array(8).fill(null), right: Array(8).fill(null) }; // what you've put on each hand's hotbar (item kinds)
     this.materials = Object.fromEntries(Object.keys(MATERIALS).map((k) => [k, 0])); // crafting materials (crafting.js)
+    this.jobs = []; // villagers out working for you (jobs.js); the game owns them, sent in `you`
+    this.lastTill = null; // { x, y, z }: where you last tilled (a hired gardener works around it)
     this.quests = emptyQuests(); // jobs for the Fantasy Town's people (quests.js); the game owns them, sent in `you`
     this.unfired = Object.fromEntries(UNFIRED.map((k) => [k, 0])); // pottery on its way: thrown, trimmed, or glazed and waiting for the kiln (pottery.js)
     this.traits = { gluten: false, lactose: false }; // rolled each time you spawn
@@ -97,7 +99,6 @@ export class Player extends Body {
     this.crouching = false;
     this.lookScale = 1; // main.js lowers it while aiming down sights
     this.sensitivity = 1; // mouse sensitivity and invert (Settings: Controls)
-    this.invertY = false;
     this.eyeHeight = EYE_HEIGHT; // eases down while crouching
   }
 
@@ -342,7 +343,7 @@ export class Player extends Body {
     doc.addEventListener('mousemove', (e) => {
       if (!this.locked || !this.inputEnabled()) return;
       this.yaw -= e.movementX * LOOK_SENSITIVITY * this.lookScale * this.sensitivity;
-      this.pitch -= e.movementY * LOOK_SENSITIVITY * this.lookScale * this.sensitivity * (this.invertY ? -1 : 1);
+      this.pitch -= e.movementY * LOOK_SENSITIVITY * this.lookScale * this.sensitivity;
       this.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, this.pitch));
     });
   }

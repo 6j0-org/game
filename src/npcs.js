@@ -115,25 +115,37 @@ export class Npcs {
     this._recount(key);
   }
 
-  /** Adds or sends home villagers so the market has the number the setting asks for. */
+  /**
+   * Adds or sends home villagers so the market has the number the setting asks for, leaving out anyone who's
+   * away on a job for a player (`busy(key)`, set by game.js; jobs.js). They come back once it's done.
+   */
   _recount(key) {
     const [ox, oz] = key.split(',').map(Number);
-    const folk = this.markets.get(key);
-    const villagers = folk.filter((n) => n.role === 'villager');
+    let folk = this.markets.get(key);
     const want = Math.max(0, Math.round(T.npcWanderers));
-    if (villagers.length > want) {
-      const gone = new Set(villagers.slice(want));
+    const keep = (n) => n.role !== 'villager' || (Number(n.key.slice(8, n.key.indexOf('@'))) < want && !this.busy?.(n.key));
+    const gone = new Set(folk.filter((n) => !keep(n)));
+    if (gone.size) {
       this.list = this.list.filter((n) => !gone.has(n));
-      this.markets.set(key, folk.filter((n) => !gone.has(n)));
-      return;
+      folk = folk.filter((n) => !gone.has(n));
+      this.markets.set(key, folk);
     }
+    const here = new Set(folk.map((n) => n.key));
     const used = new Set(folk.map((n) => n.first));
-    for (let i = villagers.length; i < want; i++) {
+    for (let i = 0; i < want; i++) {
+      const vkey = `villager${i}@${key}`;
+      if (here.has(vkey) || this.busy?.(vkey)) continue;
       const spot = this._openSpot(ox, oz);
       if (!spot) break;
-      folk.push(this._spawn({ key: `villager${i}@${key}`, role: 'villager', x: spot.x, z: spot.z, yaw: this.rand() * Math.PI * 2, home: null, counter: null,
+      folk.push(this._spawn({ key: vkey, role: 'villager', x: spot.x, z: spot.z, yaw: this.rand() * Math.PI * 2, home: null, counter: null,
         market: { x: ox, z: oz }, ...this._identity(ox, oz, 100 + i, 'villager', used) }));
     }
+  }
+
+  /** A villager heads off on a job right away (they're kept away by `busy` until it's done). */
+  sendAway(n) {
+    this.list = this.list.filter((o) => o !== n);
+    for (const [key, folk] of this.markets) if (folk.includes(n)) this.markets.set(key, folk.filter((o) => o !== n));
   }
 
   _spawn(o) {

@@ -21,6 +21,20 @@ const index = (x, y, z) => (y * CS + z) * CS + x;
 export const BLEND = 32;
 const smoothstep = (t) => t * t * (3 - 2 * t);
 
+/**
+ * Caves (the fourth generation): tunnels and caverns under natural land, with now and then a sinkhole down
+ * into them. Chunks frozen on an older generation (legacy, gen2, gen3) have none. Down there it's dark:
+ * `caveShade` dims anything under cover more than a couple of blocks below the natural ground, down to
+ * CAVE_DARK (bring a flashlight, or lava lamps).
+ */
+export const CAVE_DARK = 0.12;
+/** How lit a spot at height `y` is: 1 under open sky (`top`: the highest block in its column) or near the ground (`ground`), dimmer deeper down. */
+export function caveShade(y, ground, top) {
+  if (y > top) return 1;
+  const depth = ground - y;
+  return depth <= 2 ? 1 : Math.max(CAVE_DARK, 1 - ((depth - 2) / 6) * (1 - CAVE_DARK));
+}
+
 export class World {
   /**
    * @param {number} seed
@@ -37,11 +51,37 @@ export class World {
     this.onChange = null; // (x, y, z, id) => void, called for every block change
     this.legacy = new Set(); // "cx,cz" of chunks generated the first-generation way (see BLEND)
     this.gen2 = new Set(); // chunks frozen on the second generation (the one with the Ball Pit; see _loadGen)
+    this.gen3 = new Set(); // chunks frozen on the third generation (before caves; see _loadGen)
     this._near = new Map(); // chunk key -> legacy chunks within BLEND of it, as [cx, cz]
     this._core = new Map(); // town corner checks, "x,z" -> bool
     this.genKey = `game:gen:${this.seed}`;
     this._loadEdits();
     this._loadGen();
+  }
+
+  /** Sets the third generation's frozen chunks (no caves; the client gets them in 'welcome'). Call before generating anything. */
+  setGen3(keys) {
+    this.gen3 = new Set(Array.isArray(keys) ? keys.filter((k) => typeof k === 'string') : []);
+  }
+
+  /** Does chunk (cx, cz) have caves (the fourth generation), or is it frozen on an older one? */
+  cavesIn(cx, cz) {
+    const key = World.key(cx, cz);
+    return !this.legacy.has(key) && !this.gen2.has(key) && !this.gen3.has(key);
+  }
+
+  /** The highest block in a column (-1 if there's nothing). */
+  skyTop(x, z) {
+    let y = CH - 1;
+    while (y >= 0 && this.getBlock(x, y, z) === AIR) y--;
+    return y;
+  }
+
+  /** How lit (x, y, z) is, underground (see caveShade). */
+  caveShadeAt(x, y, z) {
+    const bx = Math.floor(x);
+    const bz = Math.floor(z);
+    return caveShade(Math.floor(y), this.heightAt(bx, bz), this.skyTop(bx, bz));
   }
 
   /** Sets the second generation's frozen chunks (the client gets them in 'welcome'). Call before generating anything. */
@@ -334,9 +374,61 @@ export class World {
       }
     }
 
+    if (!v1 && this.cavesIn(cx, cz)) this._carveCaves(ox, oz, data);
+
     const edits = this.edits.get(World.key(cx, cz));
     if (edits) for (const [i, id] of edits) data[i] = id;
     return data;
+  }
+
+  /**
+   * Caves (the fourth generation): three layers of winding tunnels (where a ridged noise is near zero, at a height
+   * another noise picks), caverns where a slow noise is high (some with lava on the floor), and sinkholes from
+   * the surface. They stay under natural land only (no zones, nothing in the blend ring) and always keep a solid
+   * roof at least two blocks thick under the lowest ground nearby, so the sea and lakes never pour in.
+   */
+  _carveCaves(ox, oz, data) {
+    const M = 2;
+    const W = CS + 2 * M;
+    const hm = new Int16Array(W * W);
+    for (let z = 0; z < W; z++) for (let x = 0; x < W; x++) hm[z * W + x] = this.heightAt(ox - M + x, oz - M + z);
+    const n = this.noise;
+    for (let lz = 0; lz < CS; lz++) {
+      for (let lx = 0; lx < CS; lx++) {
+        const x = ox + lx;
+        const z = oz + lz;
+        if (this.blendAt(x, z) < 1) continue;
+        const info = this._biomeNew(x, z);
+        if (info.special && info.s > 0.1) continue; // towns, cities, Hell and the rest keep their ground
+        const h = hm[(lz + M) * W + lx + M];
+        let low = h;
+        for (let dz = -M; dz <= M; dz++) for (let dx = -M; dx <= M; dx++) low = Math.min(low, hm[(lz + M + dz) * W + lx + M + dx]);
+        const roof = low - 3;
+        const carve = (y0, y1, limit = roof) => {
+          for (let y = Math.max(2, y0); y <= Math.min(limit, y1); y++) {
+            const i = index(lx, y, lz);
+            if (SOLID[data[i]]) data[i] = AIR;
+          }
+        };
+        for (let k = 0; k < 3; k++) { // tunnels
+          const r = Math.abs(n(x / 36 + 500 + k * 977, z / 36 - 300 + k * 631));
+          if (r >= 0.075) continue;
+          const cy = 6 + Math.round((n(x / 70 + 200 + k * 411, z / 70 + 900 + k * 233) + 1) * 11);
+          const hh = 1 + 1.8 * (1 - r / 0.075);
+          carve(Math.round(cy - hh), Math.round(cy + hh));
+        }
+        const c = n(x / 52 + 4000, z / 52 - 4000); // caverns
+        if (c > 0.45) {
+          const floor = 4 + Math.round((n(x / 30 + 4100, z / 30 + 4100) + 1) * 3);
+          carve(floor, floor + 2 + Math.round(((c - 0.45) / 0.55) * 12));
+          if (floor <= 5 && n(x / 11 + 4300, z / 11 + 4300) > 0.45 && SOLID[data[index(lx, floor - 1, lz)]]) data[index(lx, floor - 1, lz)] = LAVA; // lava pools, deep down
+        }
+        const e = n(x / 26 + 3100, z / 26 + 3100); // sinkholes: a funnel down from the surface, where a big slow noise allows
+        if (e > 0.8 && n(x / 220 + 3300, z / 220 + 3300) > 0.15 && low > SEA + 3 && !this.plantAt(x, z)) {
+          carve(Math.max(8, h - Math.round((e - 0.8) * 160)), h, h);
+        }
+      }
+    }
   }
 
   /** Builds a tree, bush or cactus rooted at (x, base, z). */
@@ -503,13 +595,19 @@ export class World {
     }
     if (rec && Array.isArray(rec.legacy)) {
       this.setLegacy(rec.legacy);
-      if (Array.isArray(rec.gen2)) { this.setGen2(rec.gen2); return; }
-      // The first load since the third generation (no Ball Pit): what's been built keeps the second.
-      this.setGen2([...edited].filter((k) => !this.legacy.has(k)));
+      if (Array.isArray(rec.gen2)) {
+        this.setGen2(rec.gen2);
+        if (Array.isArray(rec.gen3)) { this.setGen3(rec.gen3); return; }
+        // The first load since caves (the fourth generation): what's been built keeps the third.
+        this.setGen3([...edited].filter((k) => !this.legacy.has(k) && !this.gen2.has(k)));
+      } else {
+        // The first load since the third generation (no Ball Pit): what's been built keeps the second.
+        this.setGen2([...edited].filter((k) => !this.legacy.has(k)));
+      }
     } else {
       this.setLegacy([...edited]); // (a world from before the second generation: what's built keeps the first)
     }
-    try { this.storage.set(this.genKey, JSON.stringify({ v: 3, legacy: [...this.legacy], gen2: [...this.gen2] })); } catch { /* stays in memory */ }
+    try { this.storage.set(this.genKey, JSON.stringify({ v: 4, legacy: [...this.legacy], gen2: [...this.gen2], gen3: [...this.gen3] })); } catch { /* stays in memory */ }
   }
 
   _loadEdits() {

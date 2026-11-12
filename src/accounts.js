@@ -4,14 +4,13 @@
 //   Create Player   the game makes an ID and a random 256-bit key; the browser keeps the key, the game keeps
 //                   only its SHA-256 hash. Joining sends ID + key ('hello'); after that the browser never has
 //                   to sign in again.
-//   Recover Player  an Admin makes a one-time recovery code (Settings > Players); typing it in gives that
-//                   browser a fresh key for the Player (the old one stops working).
+//   Recover Player  an Admin makes a recovery code (Settings > Players; it never expires, and works once);
+//                   typing it in gives that browser a fresh key for the Player (the old one stops working).
 //   Admin           the first Player created on a world. Admins can see every Player, make recovery codes,
 //                   rename, kick, ban, delete, and make others Admins.
 // Logic only: no Three.js, no DOM (the server runs it). Uses crypto.getRandomValues (fine over plain http).
 
 const KEY = 'game:accounts';
-const RECOVERY_HOURS = 24;
 export const UID = /^[a-f0-9]{16}$/;
 export const SECRET = /^[a-f0-9]{64}$/;
 
@@ -65,7 +64,7 @@ export class Accounts {
   /** @param {{get(k:string):string|null, set(k:string,v:string):void}} store  the world's storage */
   constructor(store) {
     this.store = store;
-    this.list = {}; // uid -> { name, keyHash, created, seen, admin, banned, recovery: { code, expires } | null }
+    this.list = {}; // uid -> { name, keyHash, created, seen, admin, banned, recovery: { code } | null }
     try { this.list = JSON.parse(store.get(KEY)) || {}; } catch { this.list = {}; }
   }
 
@@ -148,8 +147,8 @@ export class Accounts {
   /** A recovery code typed in: a fresh key for that Player. Returns { uid, key, name } or { error }. */
   recover(code) {
     const c = String(code || '').trim().toUpperCase();
-    const found = Object.entries(this.list).find(([, a]) => a.recovery && a.recovery.code === c && a.recovery.expires > Date.now());
-    if (!c || !found) return { error: 'That recovery code isn\'t right, or it has expired. Ask the Admin for a new one.' };
+    const found = Object.entries(this.list).find(([, a]) => a.recovery && a.recovery.code === c); // (codes never expire)
+    if (!c || !found) return { error: 'That recovery code isn\'t right (or it\'s been used). Ask the Admin for a new one.' };
     const [uid, a] = found;
     if (a.banned) return { error: 'You\'re banned from this server.' };
     const key = randomHex(32);
@@ -159,7 +158,7 @@ export class Accounts {
     return { uid, key, name: a.name };
   }
 
-  /** An Admin makes a recovery code for a Player (good for RECOVERY_HOURS, once). */
+  /** An Admin makes a recovery code for a Player: good once, and it never expires (a new one replaces it). */
   issueRecovery(uid) {
     const a = this.get(uid);
     if (!a) return null;
@@ -167,7 +166,7 @@ export class Accounts {
     const bytes = new Uint8Array(8);
     globalThis.crypto.getRandomValues(bytes);
     const code = [...bytes].map((b) => ALPHA[b % ALPHA.length]).join('').replace(/^(.{4})/, '$1-');
-    a.recovery = { code, expires: Date.now() + RECOVERY_HOURS * 3600 * 1000 };
+    a.recovery = { code };
     this._save();
     return code;
   }

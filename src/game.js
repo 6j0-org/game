@@ -13,7 +13,7 @@ import { T, tune, bindTunable } from './tuning.js';
 import { World, CH, CS } from './world.js';
 import { Player } from './player.js';
 import { Mobs, MOB_TYPES } from './mobs.js';
-import { spend, ammoCount, scrollKind, meleeStyle, itemGroup } from './items.js';
+import { spend, ammoCount, scrollKind, meleeStyle, itemGroup, giveItem } from './items.js';
 import { Drops, Throwables, FOOD, DISHES, TOOLS, TRAITS, itemStats, isMiningKind, itemName, rollTraits, fallHealFor, fallDamageFor, itemCount, blockIdOf, printable, printUsd, BLOCK_PRINTS, shopOffer, grantItem,
   townOffer, isArmor, scrollOf } from './items.js';
 import { SETTINGS, cleanSetting, loadSettings, migrateSettings, SETTINGS_VERSION, settingText, gunStats, setTuning } from './settings.js';
@@ -40,6 +40,7 @@ import { runCommand } from './commands.js';
 import { BESTIARY } from './bestiary.js';
 import { GARDEN_TOOLS, TILLABLE, till, water, torch, newDay, harvest, canPlant } from './garden.js';
 import { Npcs } from './npcs.js';
+import { cleanJobs, cleanJob, jobUsd, jobSeconds, tillAround } from './jobs.js';
 import { cleanQuests, questOffer, offerSeed, questReady, questGoal, questAsk, lostName, hello, thanks } from './quests.js';
 import { forageFind } from './forage.js';
 import { MARKET } from './townplan.js';
@@ -144,6 +145,7 @@ export class Game {
     this.fireballs = new Fireballs(this.world);
     this.drones = new Drones(rand); // CONSUME deliveries in flight
     this.npcs = new Npcs(this.world, rand); // the Fantasy Town's people (npcs.js), out when someone's near a market
+    this.npcs.busy = (key) => [...this.players.values()].some((o) => o.p.jobs.some((j) => j.npc === key)); // away on a job (jobs.js)
     this.storms = []; // Blizzards: { id, owner, x, y, z, t, damage, chill, biteT }
     this.nextStormId = 1;
 
@@ -260,6 +262,8 @@ export class Game {
     p.level = levelFor(totalPoints(p.skills));
     p.buildy = !!saved.buildy;
     p.quests = cleanQuests(saved.quests); // (quests.js)
+    p.jobs = cleanJobs(saved.jobs); // (jobs.js)
+    p.lastTill = saved.lastTill && [saved.lastTill.x, saved.lastTill.y, saved.lastTill.z].every(Number.isInteger) ? { x: saved.lastTill.x, y: saved.lastTill.y, z: saved.lastTill.z } : null;
     if (typeof saved.worn === 'string' && isArmor(saved.worn)) { p.worn = saved.worn; p.wornFree = !!saved.wornFree; }
     for (const h of ['left', 'right']) if (typeof saved.hands?.[h] === 'string') p.hands[h] = saved.hands[h];
     p.validateHands();
@@ -300,7 +304,7 @@ export class Game {
     e.lastYou = JSON.stringify(you);
     send({
       type: 'welcome', protocol: PROTOCOL, id: e.id, name: e.name, uid, look: e.look, admin: !!this.accounts.get(uid)?.admin, multiplayer: this.multiplayer,
-      seed: this.seed, time: this.time, rate: this.rate, settings: { ...this.settings }, edits: this.world.allEdits(), legacy: [...this.world.legacy], gen2: [...this.world.gen2], pos: { ...p.pos }, hands: { ...p.hands }, you,
+      seed: this.seed, time: this.time, rate: this.rate, settings: { ...this.settings }, edits: this.world.allEdits(), legacy: [...this.world.legacy], gen2: [...this.world.gen2], gen3: [...this.world.gen3], pos: { ...p.pos }, hands: { ...p.hands }, you,
     });
     if (this.multiplayer) this._broadcast({ type: 'msg', text: `${e.name} joined`, kind: 'join' }, e);
     if (firstTime) e.send({ type: 'msg', text: traitText(p.traits), kind: 'trait' });
@@ -374,6 +378,7 @@ export class Game {
       case 'buildy': return this._buildy(e);
       case 'talk': return this._talk(e, msg); // a townsperson (npcs.js)
       case 'quest': return this._quest(e, msg);
+      case 'job': return this._job(e, msg); // hiring a villager (jobs.js)
       default:
     }
   }
@@ -642,7 +647,7 @@ export class Game {
   }
 
   /**
-   * Settings > Players, for Admins: { op: 'list' } and, for a Player `uid`: 'recover' (a one-time recovery
+   * Settings > Players, for Admins: { op: 'list' } and, for a Player `uid`: 'recover' (a one-time, never-expiring recovery
    * code), 'rename' (name), 'kick', 'ban' (on), 'adminRole' (on), 'delete'. Each answers with the list.
    */
   _admin(e, { op, uid, name, on }) {
@@ -653,7 +658,7 @@ export class Game {
     const note = (text, error = false) => e.send({ type: 'adminNote', text, error });
     if (op === 'recover' && a) {
       const code = this.accounts.issueRecovery(uid);
-      note(`Recovery code for ${a.name}: ${code} (works once, for 24 hours). They type it in under Recover Player.`);
+      note(`Recovery code for ${a.name}: ${code}. It never expires and works once: they type it in under Recover Player. Tell them to store it in a safe place (a password manager, or written down) until they need it.`);
     } else if (op === 'rename' && a) {
       const r = this.accounts.rename(uid, cleanName(name));
       if (r.error) note(r.error, true);
@@ -689,7 +694,7 @@ export class Game {
           uid: id, name: acc.name, admin: acc.admin, banned: acc.banned, online: onlineIds.has(id), you: id === e.uid,
           level: live ? live.p.level : null, playing: live ? live.name : null, characters: chars,
           created: acc.created, seen: live ? Date.now() : acc.seen,
-          recovery: acc.recovery && acc.recovery.expires > Date.now() ? acc.recovery.code : null,
+          recovery: acc.recovery ? acc.recovery.code : null, // (they never expire)
         };
       }).sort((x, y) => Number(y.online) - Number(x.online) || x.name.localeCompare(y.name)),
     });
@@ -735,6 +740,7 @@ export class Game {
       : action === 'water' ? water(this.world, x, y, z) : torch(this.world, x, y, z);
     this._fx({ type: 'garden', action, by: e.id, x: x + 0.5, y: y + 1, z: z + 0.5, n });
     if (n) this._skill(e, kind);
+    if (n && action === 'till') e.p.lastTill = { x, y, z }; // (a hired gardener works around it: jobs.js)
     if (n && action === 'till') this._tilledFor(e, x, y, z, n);
     if (!n && action === 'till') e.send({ type: 'msg', kind: 'deny', text: 'Till dirt or grass with nothing on top' });
     if (!n && action !== 'till') e.send({ type: 'msg', kind: 'deny', text: `Aim at your garden (tilled dirt) to ${action === 'water' ? 'water' : 'weed'} it` });
@@ -1855,6 +1861,7 @@ export class Game {
       this._lava(e, dt);
       if (e.fishing) this._tickFishing(e, dt);
       this._tickQuests(e);
+      this._tickJobs(e);
       if (p.dead && !e.deathTold) { // tell everyone how it happened (the message log)
         e.deathTold = true;
         this._broadcast({ type: 'msg', kind: 'death', text: this._deathText(e) });
@@ -2112,6 +2119,10 @@ export class Game {
   _sendNpc(e, n, note = null) {
     const p = e.p;
     const msg = { type: 'npc', id: n.id, name: n.name, role: n.role, counter: n.counter ? { ...n.counter } : null, note };
+    if (n.role === 'villager') { // they can be hired (jobs.js)
+      const why = this._whyNoHire(e, n);
+      msg.hire = why ? { why } : { ok: true, lastTill: !!p.lastTill, tiller: itemCount(p, 'tiller') >= 1 };
+    }
     const active = p.quests.active.find((q) => q.giver === n.key);
     if (active) {
       msg.active = this._questCopy(active);
@@ -2132,6 +2143,65 @@ export class Game {
       } else msg.text = hello(n.role, this.rand);
     }
     e.send(msg);
+  }
+
+  /** Can `e` hire villager `n` (jobs.js)? null if so, or why not. */
+  _whyNoHire(e, n) {
+    const p = e.p;
+    if (n.role !== 'villager') return 'not a villager';
+    if (p.buildy) return 'Take that hard hat off first, then we can talk business.';
+    if (p.jobs.length >= T.maxJobs) return `You've already got ${p.jobs.length} of us out working for you.`;
+    return null;
+  }
+
+  /** `job` { op: 'hire', id (the villager), kind, item, n }: pay up front, and off they go. */
+  _job(e, msg) {
+    if (msg.op !== 'hire') return;
+    const n = this.npcs.get(msg.id);
+    if (!this._nearNpc(e, n)) return;
+    const p = e.p;
+    const why = this._whyNoHire(e, n);
+    if (why) return this._sendNpc(e, n, why);
+    const job = cleanJob(msg);
+    if (job.error) return this._sendNpc(e, n, job.error);
+    if (job.kind === 'garden' && !p.lastTill) return this._sendNpc(e, n, 'Show me where first: till a block of your garden yourself, and I\'ll do the rest around it.');
+    if (job.kind === 'garden' && !(itemCount(p, 'tiller') >= 1)) return this._sendNpc(e, n, 'I\'ll need to borrow a Tiller for that.');
+    const zec = zecFor(jobUsd(job.kind, job.item, job.n), this.rate);
+    if (!p.pay(zec)) return this._sendNpc(e, n, `That'll be ${zec.toFixed(2)} ZEC, and you haven't got it.`);
+    if (job.kind === 'garden') { spend(p, 'tools', 'tiller', 1); p.validateHands(); } // lent (Buildy Bois can't hire, so it's a real one)
+    const seconds = jobSeconds(job.kind, job.n);
+    const id = p.jobs.reduce((a, j) => Math.max(a, j.id), 0) + 1;
+    p.jobs.push({ id, npc: n.key, name: n.name, kind: job.kind, item: job.item, n: job.n, due: Date.now() + seconds * 1000, spot: job.kind === 'garden' ? { ...p.lastTill } : null });
+    const mins = Math.max(1, Math.round(seconds / 60));
+    const what = job.kind === 'errand' ? `${job.n} ${itemName(job.item)}` : `${job.n} blocks of your garden tilled`;
+    e.send({ type: 'npc', id: n.id, name: n.name, role: n.role, counter: null, gone: true,
+      text: job.kind === 'errand' ? `Right you are: ${what}. I'll be back in about ${mins} minute${mins === 1 ? '' : 's'}.` : `I'll have ${what} in about ${mins} minute${mins === 1 ? '' : 's'}, and your Tiller back.`,
+      note: `Paid ${zec.toFixed(2)} ZEC` });
+    e.send({ type: 'msg', kind: 'quest', text: `${job.kind === 'errand' ? `🧺 ${n.name.split(' ')[0]} is off to get you ${what}` : `🌱 ${n.name.split(' ')[0]} is off to till ${job.n} blocks of your garden`} (${zec.toFixed(2)} ZEC, about ${mins} min)` });
+    this.npcs.sendAway(n);
+    this._sendYou(e);
+  }
+
+  /** Jobs that are done: errands hand over what they fetched; gardeners till and give the Tiller back. */
+  _tickJobs(e) {
+    const p = e.p;
+    if (!p.jobs.length) return;
+    const now = Date.now();
+    const done = p.jobs.filter((j) => j.due <= now);
+    if (!done.length) return;
+    p.jobs = p.jobs.filter((j) => j.due > now);
+    for (const j of done) {
+      const first = j.name.split(' ')[0];
+      if (j.kind === 'errand') {
+        giveItem(p, j.item, j.n);
+        e.send({ type: 'msg', kind: 'questDone', text: `🧺 ${first} is back with ${j.n} ${itemName(j.item)} for you` });
+      } else {
+        const tilled = tillAround(this.world, j.spot, j.n);
+        p.tools.tiller = (p.tools.tiller || 0) + 1;
+        e.send({ type: 'msg', kind: 'questDone', text: `🌱 ${first} tilled ${tilled} block${tilled === 1 ? '' : 's'} of your garden${tilled < j.n ? ' (that was all the ground there was)' : ''} and gave your Tiller back` });
+      }
+    }
+    this._sendYou(e);
   }
 
   /** A quest to send (its own copy: single player passes messages without copying them). */
@@ -2292,6 +2362,7 @@ export class Game {
       food: { ...p.food }, dishes: { ...p.dishes }, wallet: { ...p.wallet }, tools: { ...p.tools }, materials: { ...p.materials }, spells: [...p.spells], hotbars: { left: [...p.hotbars.left], right: [...p.hotbars.right] },
       scrolls: { ...p.scrolls }, worn: p.worn,
       quests: this._questsYou(p),
+      jobs: p.jobs.map((j) => ({ id: j.id, name: j.name, kind: j.kind, item: j.item, n: j.n, left: Math.max(0, Math.ceil((j.due - Date.now()) / 1000)) })), lastTill: !!p.lastTill,
       cooking: p.cooking ? { out: p.cooking.out, n: p.cooking.n, t: Math.max(0, Math.ceil(p.cooking.t)) } : null, unfired: { ...p.unfired }, kiln: p.kiln ? { t: Math.max(0, Math.ceil(p.kiln.t)), n: p.kiln.pieces.reduce((a, [, n]) => a + n, 0), text: piecesText(p.kiln.pieces) } : null,
     };
   }
@@ -2343,7 +2414,7 @@ export class Game {
     this.savePlayer(e.token, {
       name: e.name, seed: this.seed, pos: p.dead ? null : { ...p.pos }, traits: p.traits, stats: p.baseStats, statBonus: p.statBonus, statPoints: p.statPoints,
       food: p.food, dishes: p.dishes, wallet: p.wallet, tools: p.tools, materials: p.materials, spells: p.spells, hotbars: p.hotbars, hands: p.hands, ammo: p.ammo, scrolls: p.scrolls, worn: p.worn,
-      skills: p.skills, cleaned: p.cleaned, bed: p.bed, quests: p.quests, blocks: p.blocks, buildy: p.buildy, wornFree: !!p.wornFree, unfired: p.unfired, kiln: p.kiln, cooking: p.cooking,
+      skills: p.skills, cleaned: p.cleaned, bed: p.bed, quests: p.quests, jobs: p.jobs, lastTill: p.lastTill, blocks: p.blocks, buildy: p.buildy, wornFree: !!p.wornFree, unfired: p.unfired, kiln: p.kiln, cooking: p.cooking,
       orders: p.orders.map((o) => ({ kind: o.kind, t: Math.max(0, o.t) })), // a drone in flight is sent again next time
     });
   }

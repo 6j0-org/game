@@ -29,6 +29,7 @@ import './skills.js';
 import './forage.js';
 import './npcs.js';
 import './quests.js';
+import './jobs.js';
 
 export { T, setTuning };
 

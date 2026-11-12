@@ -222,8 +222,10 @@ export class Mobs {
       this.spawnTimer = T.monsterInterval / monsters;
       const hostiles = this.list.filter((m) => !MOB_TYPES[m.type].passive).length;
       if (hostiles < Math.round((T.maxMonsters + extra * 6) * monsters)) {
-        if (light < T.darkness) this._trySpawn(this._randomPlayer(players)); // only in the dark
-        else this._trySpawnBackrooms(this._randomPlayer(players)); // (the Backrooms' dark rooms are dark all day)
+        const who = this._randomPlayer(players);
+        if (this._underground(who)) this._trySpawnCave(who); // caves are dark all day (world.js caveShade)
+        else if (light < T.darkness) this._trySpawn(who); // only in the dark
+        else this._trySpawnBackrooms(who); // (the Backrooms' dark rooms are dark all day)
       }
     }
     this.herdTimer -= dt;
@@ -678,6 +680,41 @@ export class Mobs {
     return made;
   }
 
+  /** A night monster for a spot: penguins only where it's cold (and three times as many there), Tung Tung Tung Sahur only before dawn. */
+  _pickNight(cold) {
+    const choices = Object.entries(MOB_TYPES).filter(([, def]) => def.weight > 0 && def.habitat !== 'backrooms' && (def.habitat !== 'cold' || cold) && (!def.sahur || this._sahur()))
+      .map(([name, def]) => [name, def.weight * (def.habitat === 'cold' ? 3 : 1)]);
+    const total = choices.reduce((a, [, w]) => a + w, 0);
+    let pick = this.rand() * Math.max(total, 1);
+    for (const [name, w] of choices) if ((pick -= w) < 0) return name;
+    return 'zombie';
+  }
+
+  /** Is this player down in a cave (where it's dark whatever the time)? */
+  _underground(player) {
+    return !!this.world.caveShadeAt && this.world.caveShadeAt(player.pos.x, player.pos.y + 1, player.pos.z) < 0.5;
+  }
+
+  /** A monster somewhere dark in the cave around a player: 10-26 blocks off, on a floor near their height, away from lava lamps. */
+  _trySpawnCave(player) {
+    for (let tries = 0; tries < 6; tries++) {
+      const ang = this.rand() * Math.PI * 2;
+      const d = 10 + this.rand() * 16;
+      const x = Math.floor(player.pos.x + Math.cos(ang) * d);
+      const z = Math.floor(player.pos.z + Math.sin(ang) * d);
+      const lowest = Math.max(1, Math.floor(player.pos.y) - 10);
+      let y = Math.floor(player.pos.y) + 6;
+      const floorAt = (yy) => SOLID[this.world.getBlock(x, yy - 1, z)] && !LEAFY[this.world.getBlock(x, yy - 1, z)] && this.world.getBlock(x, yy, z) === AIR && this.world.getBlock(x, yy + 1, z) === AIR;
+      while (y > lowest && !floorAt(y)) y--;
+      if (y <= lowest || this.world.caveShadeAt(x, y + 1, z) >= 0.4 || this._nearLamp(x, y, z)) continue;
+      const type = this._pickNight(false);
+      const mob = this.spawn(type, x + 0.5, y, z + 0.5, type === 'seedoil' ? 1 + Math.floor(this.rand() * T.seedOilMaxSize) : 1);
+      if (mob.collides()) { this.list.pop(); continue; }
+      return mob;
+    }
+    return null;
+  }
+
   /** Before dawn: from T.sahurStart (an hour of the night) until sunrise. `time` is the game's (set every tick). */
   _sahur() {
     if (!Number.isFinite(this.time)) return false;
@@ -695,14 +732,7 @@ export class Mobs {
     // Only creatures that belong here: penguins where it's cold (and three times as many there).
     const cold = this._cold(x, z, spot.ground);
     if (this.world.biomeAt(x, z).biome === 'backrooms') return this._trySpawnBackrooms(player, [x, z]); // (not on the roof: inside, in the dark)
-    const choices = Object.entries(MOB_TYPES).filter(([, def]) => def.weight > 0 && def.habitat !== 'backrooms' && (def.habitat !== 'cold' || cold) && (!def.sahur || this._sahur()))
-      .map(([name, def]) => [name, def.weight * (def.habitat === 'cold' ? 3 : 1)]);
-    const total = choices.reduce((a, [, w]) => a + w, 0);
-    let pick = this.rand() * Math.max(total, 1);
-    let type = 'zombie';
-    for (const [name, w] of choices) {
-      if ((pick -= w) < 0) { type = name; break; }
-    }
+    const type = this._pickNight(cold);
     const size = type === 'seedoil' ? 1 + Math.floor(this.rand() * T.seedOilMaxSize) : 1;
     const mob = this.spawn(type, x + 0.5, y + 1, z + 0.5, size);
     if (mob.collides()) {

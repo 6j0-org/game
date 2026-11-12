@@ -242,6 +242,15 @@
     .quest-box .quest-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
     .quest-box .quest-row button { white-space: nowrap; padding: 5px 10px; }
     #npc-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+    #npc .hire { margin-bottom: 12px; }
+    #quests .jobs-head { margin: 14px 0 6px; font-size: calc(13px * var(--fs)); letter-spacing: 0.12em; text-transform: uppercase; color: #f2d49b; }
+    #quests .job { padding: 6px 0; font-size: calc(14px * var(--fs)); }
+    #npc .hire-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; font-size: calc(15px * var(--fs)); }
+    #npc .hire select, #npc .hire input { font: inherit; padding: 6px 8px; border-radius: 8px; color: var(--text); background: rgba(0, 0, 0, 0.3); border: 1px solid var(--panel-border); }
+    #npc .hire select[hidden] { display: none; }
+    #npc .hire input { width: 5em; }
+    #npc .hire-price { display: block; font-size: calc(13px * var(--fs)); opacity: 0.85; line-height: 1.4; }
+    #npc .hire-price.deny { color: #ffb0a0; opacity: 1; }
     #npc-buttons .primary { border-color: #f2d49b; color: #f2d49b; }
     #quests-list { overflow-y: auto; min-height: 0; margin-bottom: 10px; }
     #quests-list .none { opacity: 0.7; font-style: italic; }
@@ -341,7 +350,8 @@
     #spell .mana em { position: absolute; inset: 0; font: 700 calc(9px * var(--fs))/12px ui-monospace, Menlo, Consolas, monospace; text-align: center; font-style: normal; }
     #spell small { display: block; margin-top: 4px; font-size: calc(12px * var(--fs)); color: #ffe9a8; }
     #spell small.hint { color: #b9b4d8; opacity: 0.8; }
-    #ammo[hidden], #surge[hidden], #buildy[hidden], #flap[hidden] { display: none; }
+    #ammo[hidden], #surge[hidden], #buildy[hidden], #flap[hidden], #compass[hidden] { display: none; }
+    #compass { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); width: calc(76px * var(--fs)); height: calc(76px * var(--fs)); pointer-events: none; filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5)); }
     #flap {
       position: fixed; left: 50%; bottom: 106px; transform: translateX(-50%); padding: 5px 12px; border-radius: 10px; pointer-events: none;
       background: rgba(10, 30, 60, 0.8); border: 1px solid #7fb8ff; color: #cfe6ff; font: 700 calc(14px * var(--fs)) system-ui, sans-serif;
@@ -851,6 +861,13 @@
   <div id="console" hidden><div id="console-log"></div><input id="console-input" spellcheck="false" autocomplete="off" maxlength="200"></div>
   <div id="buildy" hidden></div>
   <div id="flap" hidden></div>
+  <svg id="compass" hidden viewBox="-50 -50 100 100" aria-label="Compass">
+    <circle r="47" fill="#b08a3a" /><circle r="41" fill="#f2e8cc" /><circle r="41" fill="none" stroke="#8a6a24" stroke-width="1.5" />
+    <path d="M0 -41 V-35 M0 41 V35 M-41 0 H-35 M41 0 H35" stroke="#8a6a24" stroke-width="2" /><!-- ticks; the top is where you're facing -->
+    <g class="quest"><path d="M0 -36 L5 -8 L0 -12 L-5 -8 Z" fill="#e8a820" stroke="#7a5410" stroke-width="1" /><circle cy="-30" r="1.6" fill="#7a5410" /></g>
+    <g class="north"><path d="M0 -34 L6 0 L0 4 L-6 0 Z" fill="#d8322a" /><path d="M0 34 L6 0 L0 -4 L-6 0 Z" fill="#3a3e46" /><text y="-20" text-anchor="middle" font-size="11" font-weight="700" fill="#fff" font-family="system-ui, sans-serif">N</text></g>
+    <circle r="4" fill="#8a6a24" />
+  </svg>
   <div id="surge" hidden></div>
   <div id="headache" hidden></div>
   <div id="washbar" hidden><div id="washbar-fill"></div></div>
@@ -884,14 +901,12 @@
       </nav>
       <section data-panel="controls">
         <label class="client-row">Mouse sensitivity <b data-out="sensitivity"></b><input data-pref="sensitivity" type="range" min="0.2" max="3" step="0.05"></label>
-        <label class="client-check"><input data-pref="invertY" type="checkbox"> Invert mouse up/down</label>
         <h3>Keyboard and mouse</h3>
         <dl id="client-keys"></dl>
       </section>
       <section data-panel="sound">
         <label class="client-row">Volume <b data-out="volume"></b><input id="volume" type="range" min="0" max="100" step="1"></label>
-        <label class="client-check"><input id="muted" type="checkbox"> Mute everything (M)</label>
-        <label class="client-check hrtf"><input id="hrtf" type="checkbox"> 🎧 3D sound for headphones: realistic direction, above and below too (voices and game sounds)</label>
+        <div class="client-item"><label class="client-row">Music <b data-out="music"></b><input data-pref="music" type="range" min="0" max="1" step="0.05"></label><small class="client-note">Made up as it plays: wistful in the wilds, a bard in town, techno in the Neon City, and something creepy in caves.</small></div>
         <div class="client-item"><label class="client-row">Room echo <b data-out="echo"></b><input data-pref="echo" type="range" min="0" max="2" step="0.05"></label><small class="client-note">How much rooms, halls, caves and streets echo (100% is normal).</small></div>
         <label class="client-check"><input data-pref="ambient" type="checkbox"> Birds by day and crickets at night</label>
       </section>
@@ -968,7 +983,7 @@
             </div>
           </div>
           <div id="account-recover" hidden>
-            <p>Lost your Player (a new browser, or cleared site data)? Contact the Admin of this server: they can give you a recovery code to type in here.</p>
+            <p>Lost your Player (a new browser, or cleared site data)? Contact the Admin of this server: they can give you a recovery code to type in here. Codes never expire, but each works once: store yours in a safe place until you need it.</p>
             <label>Recovery code <input id="account-code" maxlength="12" autocomplete="off" spellcheck="false" placeholder="ABCD-EFGH"></label>
             <div class="id-buttons">
               <button id="account-recover-go" type="button" class="primary">Recover</button>

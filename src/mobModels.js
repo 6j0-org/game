@@ -442,6 +442,8 @@ const TOOL_SHAPES = {
     [0.12, 0.09, 0.12, 0xb8863b, 0, 0.13, 0.07], [0.06, 0.06, 0.13, 0x2d3036, 0, 0.05, -0.08]],
   // Phone: dark slab with a colourful screen facing you.
   phone: [[0.15, 0.28, 0.025, 0x16181d, 0, 0.14, 0], [0.13, 0.24, 0.005, 0xff6ad5, 0, 0.14, 0.014], [0.05, 0.08, 0.006, 0x5fd4ff, 0.03, 0.18, 0.015]],
+  // Compass: a flat brass case with a cream face and a red needle.
+  compass: [[0.22, 0.05, 0.22, 0xb08a3a, 0, 0, 0], [0.18, 0.052, 0.18, 0xf2e8cc, 0, 0.002, 0], [0.03, 0.054, 0.12, 0xd8322a, 0, 0.004, -0.03], [0.03, 0.054, 0.08, 0x3a3e46, 0, 0.004, 0.04], [0.06, 0.04, 0.04, 0xb08a3a, 0, 0, -0.13]],
   // Flashlight: black body, grippy band, wide head with a warm lens (points up the model's +Y).
   flashlight: [[0.09, 0.42, 0.09, 0x2b2e34, 0, 0.21, 0], [0.1, 0.06, 0.1, 0x4a4f58, 0, 0.12, 0],
     [0.15, 0.1, 0.15, 0x3a3e46, 0, 0.47, 0], [0.12, 0.02, 0.12, 0xfff3c4, 0, 0.525, 0], [0.03, 0.04, 0.03, 0xd94a3a, 0.05, 0.3, -0.04]],
@@ -807,8 +809,9 @@ export class MobModels {
 
       // Colour: daylight level, red when hurt.
       const c = model.material.color;
-      if (m.hurtT > 0) c.setRGB(light * 1.6, light * 0.5, light * 0.5);
-      else c.setScalar(light);
+      const lit = light * (this.shadeAt ? this.shadeAt(m) : 1); // (dark in caves: main.js sets shadeAt)
+      if (m.hurtT > 0) c.setRGB(lit * 1.6, lit * 0.5, lit * 0.5);
+      else c.setScalar(lit);
       for (const extra of model.extra) extra.color.copy(c);
       if (m.type === 'seedoil') {
         // Stretch while rising, squash while falling or landing.

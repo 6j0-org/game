@@ -32,11 +32,11 @@ export const GARDEN_TOOLS = { tiller: 'till', sprayer: 'water', weedtorch: 'torc
 export const TILLABLE = new Set([DIRT, GRASS, SNOW_GRASS, MUD]);
 const SIDES = [[0, -1], [1, 0], [0, 1], [-1, 0]]; // N, E, S, W
 
-/** Tills a row starting at (x, y, z) along `facing` (0 N, 1 E, 2 S, 3 W). Returns how many blocks it tilled. */
-export function till(world, x, y, z, facing) {
+/** Tills a row (`row` long: the Tiller's setting) starting at (x, y, z) along `facing` (0 N, 1 E, 2 S, 3 W). Returns how many blocks it tilled. */
+export function till(world, x, y, z, facing, row = T.tillRow) {
   const [dx, dz] = SIDES[facing] || SIDES[0];
   let n = 0;
-  for (let i = 0; i < T.tillRow; i++) {
+  for (let i = 0; i < row; i++) {
     const bx = x + dx * i;
     const bz = z + dz * i;
     const id = world.getBlock(bx, y, bz);

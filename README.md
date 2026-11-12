@@ -30,7 +30,7 @@ docker run -d --name game -p 8000:8000 -v game-data:/data game
 
 Everyone shares one world: blocks, time of day, monsters, animals, dropped items and coins. You can hit each other (PvP), and the couch pillow and hackysack finally have their intended targets. The server saves the world and each player's inventory, coins and skills to `data/` (or the `/data` volume) every 10 seconds and when it stops.
 
-**Players.** The first time you open a world, you see **Create Player**: pick a name and the world gives your browser a secret key (it keeps only a hash of it). From then on your browser signs you in by itself. Players are stored with the world (the server's `data/world.json`, or your browser's world save in single player). Lost your Player (new browser, cleared site data)? **Recover Player** tells you to ask the server's **Admin**, who can give you a one-time recovery code to type in there. The **first Player created on a world is its Admin**: Admins get a **Players** tab in Settings that lists everyone (online or not, level, last seen) and can make recovery codes, rename, kick, ban, delete Players and make other Players Admins. Names are unique.
+**Players.** The first time you open a world, you see **Create Player**: pick a name and the world gives your browser a secret key (it keeps only a hash of it). From then on your browser signs you in by itself. Players are stored with the world (the server's `data/world.json`, or your browser's world save in single player). Lost your Player (new browser, cleared site data)? **Recover Player** tells you to ask the server's **Admin**, who can give you a recovery code to type in there. Codes never expire but work once, so store yours in a safe place. The **first Player created on a world is its Admin**: Admins get a **Players** tab in Settings that lists everyone (online or not, level, last seen) and can make recovery codes, rename, kick, ban, delete Players and make other Players Admins. Names are unique.
 
 **Multiplayer differences:**
 - The world never pauses. Menus (Q/E, the 3D Printer) don't stop time, so pick your moment.
@@ -99,7 +99,6 @@ Three.js r160 is loaded from jsDelivr through the import map in `index.html`, so
 | / | Open the console to type a command (see below) |
 | J | Bestiary: every creature, with a picture and a short description |
 | L | Quest log: your quests, how far along they are, and what they pay |
-| M | Mute / unmute sound |
 | F3 | Toggle the info panel (hidden at first) |
 | P | Camera: first person (your own body, holding what's in your hands, exactly as others see it), behind you, facing you |
 | Esc | Main menu; in any menu, back one step; in the main menu, back to the game |
@@ -126,7 +125,7 @@ Each mouse button uses its own hand, and what the hand holds decides what the cl
 
 ## Survival
 
-A full day lasts 10 minutes. Monsters only spawn **in the dark**: never during the day (from dawn until after sunset), and never within 8 blocks of a lava lamp, in any direction. At night they appear 24–40 blocks away:
+A full day lasts 10 minutes. Monsters only spawn **in the dark**: never during the day (from dawn until after sunset) except down in caves, and never within 8 blocks of a lava lamp, in any direction. At night they appear 24–40 blocks away:
 
 - **Zombie**: shambles toward you and punches.
 - **Skeleton**: keeps its distance and shoots arrows when it can see you.
@@ -197,6 +196,7 @@ During the day, **cows** wander in herds on grass. Hit one and it runs (it takes
 | Couch Pillow | $20 | Only 1 damage, but huge knockback, plus feathers |
 | Hackysack | $10 | Left click throws it. It bounces, hits for 3, and you walk over it to get it back |
 | Flashlight | $25 | Lights a cone in front of you at night (other players' flashlights light your view too) |
+| Compass | $20 | Hold it to see a dial at the top of the screen: the red needle points north, the gold one to your current quest (the one you took last): the lost thing, the garden to till, or whoever is waiting for you. Also sold by the Fletcher |
 | Grappling Hook | $60 | Hooks a block up to 40 away and reels you in while you hold the button |
 | Pistol | $40 | 9 per shot, accurate. Bullets |
 | Shotgun | $90 | 8 pellets × 6, brutal up close. Shells |
@@ -207,6 +207,8 @@ During the day, **cows** wander in herds on grass. Hit one and it runs (it takes
 | Overcharge Cannon | $900 | A slow green orb that zaps everything near its path, then detonates hugely. 30 cells a shot |
 
 **Biomes:** the land is plains, forest, jungle, desert, taiga and swamp, with special zones here and there: the Concrete Jungle, the Abandoned City, Hell, the Backrooms, the **Neon City** (for now built like the Concrete Jungle; the cyberpunk city is coming) and the **Fantasy Town**. Biomes are big: crossing one can take a few minutes. (They used to be ten times smaller. Worlds made before that keep the old, smaller terrain wherever anyone had built (every chunk with player changes, plus one chunk around it), and the new land eases into it over about 32 blocks, so your builds still stand on the ground they were built on. Likewise the Ball Pit is gone from new land, but ball pits where anyone had built stay, and its Foam and Ball Pit Balls blocks are still in the game.)
+
+**Caves:** under natural land there are caves: winding tunnels at different depths, bigger caverns (some deep ones with pools of lava), and now and then a **sinkhole** opening down from the surface. They never reach towns, cities or the other special zones, and always keep a thick roof under seas and lakes. **It's dark down there, day or night:** anything under cover more than a couple of blocks below the ground gets darker the deeper it is, so bring a Flashlight or lava lamps. Monsters come out of the dark in caves at any hour (never within 8 blocks of a lava lamp). Worlds made before caves keep everything you've built exactly as it was: every chunk with an edit, plus one chunk all round it, stays without caves.
 
 **The Fantasy Town:** a large town of cobbled streets lit by lamp posts (so monsters don't spawn in the middle of it), timber-and-plaster houses, gardens and covered wells. Every 120 blocks or so there's a **market square** with a fountain and five shops. Each shop has a counter with its sign painted on it; **right-click the counter** to see what's for sale. You pay in Zcash at the exchange rate of the moment (Rizz haggles here, and only here), with no fee and no wait. Their goods are sold nowhere else: you can't print them or order them.
 
@@ -222,6 +224,8 @@ During the day, **cows** wander in herds on grass. Hit one and it runs (it takes
 
 - the **Blacksmith** wants coal and iron, copper or silver ore; the **Healer** mushrooms, Glowcaps, yarrow, wild mint, garlic or thyme; the **Innkeeper** ingredients (vegetables, wheat, steak, milk, fish); the **Fletcher** sticks, feathers, cord and plant fiber; the **Wizard** Glowcaps, sulfur, silver ore and mushrooms;
 - **villagers** lose things about the town (follow the golden beam, walk up to it, take it back), want a patch of **garden tilled** (inside the green ring; they'll lend you a Tiller if you haven't one), or are just hungry for something cooked.
+
+**Hiring villagers:** it works the other way round too. Talk to a villager and pick **Hire for a job…**: an **errand** (they fetch 1 to 20 of an ore, coal, sulfur, mushrooms, Glowcaps, yarrow, mint, sticks, fiber, feathers or wheat, for 150% of what it's worth to quest givers) or **gardening** (they borrow your Tiller and till up to 32 blocks around the last block you tilled yourself, $0.50 a block). You pay in ZEC up front, they leave the market, and when they're back (2 minutes plus 10 s an item or 4 s a block) the goods go straight into your inventory, or the ground is tilled and you get your Tiller back. Two villagers can work for you at once; the quest log (L) shows them under **Working for you**. Every number is a server setting (Jobs).
 
 Coal and ore turn up now and then when you **mine stone** (silver rarely), sulfur in Hell's **brimstone**, yarrow and wild mint when you **cut grass**, mushrooms when you **dig dirt or grass** (more in swamp mud, where the rare **Glowcap** grows too), and birds leave **feathers**. Go back when you're done (**❓** over their head): you're paid in Zcash at the rate of the moment and get **Questing** skill points (title: *Hero*), and they'll have another job for you after a few minutes. You can have five quests at once, one per person; the quest log (**L**) and the Tab map show them, and you can give one up there. Rewards, sizes, the cooldown, villagers per market and every find chance are Server settings (Quests, Gathering).
 
@@ -263,7 +267,7 @@ Each morning the message log says how the gardens did. Row length, sprayer and t
 **Crafting:** press **R** to craft by hand, anywhere. Breaking **leaves** sometimes drops a **stick** and breaking **grass** sometimes drops **plant fiber** (walk over them to pick them up). Recipes: **Cord** (3 fiber), **Planks** (a log makes 4), **Sticks** (a plank makes 2), **stone heads** (axe, pick, shovel, or a blade, each knapped from a stone block), and **stone tools**: a stick, a head and cord make a **Stone Axe**, **Pick** or **Shovel** (they work like the printed ones at half the speed) or a **Stone Knife**; two sticks, a blade and cord make a **Stone Spear**. Crafting trains the **Crafting** skill (title: *Crafter*); the recipe book (K) lists these too. The stick and fiber chances and the stone tool speed are Server settings.
 
 **Cooking:** place a **Range** (stovetop and oven), a **Campfire** or an **Olive Press** (3D Printer or CONSUME) and right-click it to cook. The ingredients go in straight away and the dish lands in your food a few seconds later (walk away if you like). **Raw meat and fish heal less** than cooked, and raw meat has a 1 in 4 chance of upsetting your stomach; roast or grill them on a campfire or the range. The **recipe book** (**K**, or 📖 Recipes in the main menu) lists everything:
-- Range: **Bread** (2 wheat, yeast, a bucket of water), **Baked Potato** (potato, butter, chives), **Cornmeal** (2 corn makes 2), **Tortilla Chips** (cornmeal, water: 2), **Poverty Nachos** (chips, cheese), **Tim's Nachos** (chips, pinto beans, jalapeño, cheese), **Hummus** (2 garbanzo beans, garlic, olive oil), and roasting.
+- Range: **Bread** (2 wheat, yeast, a bucket of water), **Baked Potato** (potato, butter, chives), **Cornmeal** (2 corn makes 2), **Tortilla Chips** (cornmeal, water: 2), **Poverty Nachos** (chips, cheese), **Tim's Nachos** (chips, pinto beans, jalapeño, cheese), **Jeddi's Hummus** (2 garbanzo beans, garlic, olive oil), and roasting.
 - Campfire: roast meat (steak, liver, birds, penguin) and grill fish.
 - Olive Press: **Olive Oil** (3 olives).
 
@@ -322,11 +326,13 @@ Breaking blocks takes time: hold the button of an empty or tool-holding hand. By
 
 **Menus and Esc:** clicking outside a pop-up (the Q/E picker, the printer, a shop, talking to someone, the quest log, pottery, cooking, the Cold Wallet, the recipe book, the bestiary, Settings or the phone) closes it and puts you back in the game. In the game, **Esc** opens the **main menu** (Resume, Settings, Server settings, your name, New world). In any menu, Esc goes back one step (Settings or Server settings to the main menu; the printer, a shop, the phone and the like to the game). In the main menu, Esc goes back to the game: browsers only let a page take the mouse back on a click, so a "Click to return to the game" prompt comes up, and one click puts you back in.
 
-**Settings** (main menu, or V for the Voice tab), in tabs: **Controls:** mouse sensitivity, invert up/down, and a list of every key. **Sound:** volume, mute, 3D sound for headphones, how much rooms echo, birds and crickets on or off. **Voice:** your microphone and each player's volume and Nearby only (V opens this tab). **Display:** font size (all the text in menus, messages and labels; it starts at 125%), field of view, camera shake, the F3 info panel, the message log. **Graphics:** render distance and resolution. Your choices are saved in this browser.
+**Settings** (main menu, or V for the Voice tab), in tabs: **Controls:** mouse sensitivity and a list of every key. **Sound:** volume (100% to start), music volume, how much rooms echo, birds and crickets on or off. **Voice:** your microphone and each player's volume and Nearby only (V opens this tab). **Display:** font size (all the text in menus, messages and labels; it starts at 125%), field of view, camera shake, the F3 info panel, the message log. **Graphics:** render distance and resolution. Your choices are saved in this browser.
 
 **Message log:** every notification (pickups, healing, XP, purchases, deliveries, texts from other players, console replies, who joined voice) and **everyone's player events** (who joined or left, who changed their name, who reached a new level, and every death and what caused it: "Sam was killed by a Zombie", "Sam was killed by Alex (Longsword)", "Sam died from falling 14 blocks", "Sam burned to death in lava", "Sam fell out of the world"...) appears in a small log in the bottom right. Repeats count up (×3) instead of filling it, it fades a little when nothing's happening, and you can scroll back through the last 100 lines when your mouse is free. Settings > Display hides it.
 
 **Sound:** every sound is synthesised in the browser as it plays (no audio files): footsteps that depend on what you walk on, block and combat sounds, creature noises, explosions and fireballs, the printer, and birds by day or crickets at night when you're outdoors. Sounds in the world are **3D**: they come from where they happen, and **walls between you and a sound muffle it**. The place you're in changes how everything sounds: **small rooms, halls, caves** and **streets between tall buildings** each have their own echo, everything goes dull **underwater**, and **Hell** rumbles. Rockets, fireballs, magic missiles, arrows, orbs and delivery drones **hum as they fly, with the Doppler effect** (higher as they come at you, lower as they go). **🎧 3D sound for headphones** (Settings > Sound) is on by default: realistic positioning, including above and below. It's made for headphones; on speakers, untick it for plain left/right panning.
+
+**Music:** made up as it plays, like every other sound (there are no audio files), in four moods that follow you around: wistful pastoral music in the wilderness (soft strings, a harp and a breathy flute, in a wandering minor key), a medieval bard tune in the Fantasy Town (a drone, lute, frame drum and a recorder playing a little AABA melody it makes up for each piece), something creepy in caves, Hell and the Backrooms (beating drones, far-off bells, rumbles), and techno in the Neon City. Each piece ends with a rest before the next, and moods crossfade as you move between places. **Settings > Sound > Music** sets how loud it is (60% to start; 0 turns it off).
 
 In single player, the world seed, your block edits and your progress are saved in `localStorage`; click **New world** on the pause screen to start over. In multiplayer the server keeps the shared world.
 
@@ -349,6 +355,8 @@ In single player, the world seed, your block edits and your progress are saved i
 - `src/mobs.js`: mob AI, spawning, arrows, blast damage
 - `src/bestiary.js`: the Bestiary's entries (J)
 - `src/fireballs.js`: fireball projectiles (and magic missiles) and block-destroying explosions
+- `src/music.js`: the generated music (pastoral, bard, creepy and techno moods) and its scheduler
+- `src/jobs.js`: hiring villagers for errands and gardening
 - `src/spells.js`: the spells, mana from Big Brain, and Wand/Staff potency
 - `src/drones.js`: CONSUME delivery drones
 - `src/items.js`: food, dishes, tools (dollar prices), loot, dropped items, and the hand inventory (search and Tab completion)

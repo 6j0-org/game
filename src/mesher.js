@@ -2,7 +2,7 @@
 // and atlas UVs. Returns plain typed arrays; main.js wraps them in Three.js geometry.
 
 import { AIR, WATER, BLOCKS, SEE_THROUGH, PLANT, SHAPES, LAVA_LAMP, FLUORESCENT, TILE_COUNT, FLUID, LEAFY, GLOWS, shapeBoxes, isLitLuminary, CAMPFIRE } from './blocks.js';
-import { CS, CH } from './world.js';
+import { CS, CH, caveShade } from './world.js';
 
 // Corner order per face forms a strip: triangles (0,1,2) and (2,1,3).
 const FACES = [
@@ -119,6 +119,26 @@ export function buildChunkMesh(world, chunk) {
     const b = get(x, y, z);
     return b !== AIR && !SEE_THROUGH[b] ? 1 : 0;
   };
+  // Caves are dark (world.js caveShade): for each column (and one round the chunk), its natural ground height
+  // and its highest block. A face is lit by the air in front of it.
+  const W = CS + 2;
+  const ground = new Int16Array(W * W);
+  const top = new Int16Array(W * W);
+  for (let z = -1; z <= CS; z++) {
+    for (let x = -1; x <= CS; x++) {
+      const i = (z + 1) * W + x + 1;
+      ground[i] = world.heightAt(ox + x, oz + z);
+      let y = CH - 1;
+      while (y >= 0 && get(x, y, z) === AIR) y--;
+      top[i] = y;
+    }
+  }
+  const shadeAt = (x, y, z) => {
+    const i = (Math.max(-1, Math.min(CS, z)) + 1) * W + Math.max(-1, Math.min(CS, x)) + 1;
+    return caveShade(y, ground[i], top[i]);
+  };
+  /** Dims the colours added to `buf` since `from` (a plant or shaped block in a cave). */
+  const dim = (buf, from, k) => { if (k < 1) for (let i = from; i < buf.col.length; i++) buf.col[i] *= k; };
 
   for (let y = 0; y < CH; y++) {
     for (let z = 0; z < CS; z++) {
@@ -126,7 +146,9 @@ export function buildChunkMesh(world, chunk) {
         const id = data[(y * CS + z) * CS + x];
         if (id === AIR) continue;
         if (PLANT[id]) {
+          const from = solid.col.length;
           addPlant(solid, x, y, z, BLOCKS[id].side);
+          dim(solid, from, shadeAt(x, y, z));
           continue;
         }
         if (id === LAVA_LAMP) {
@@ -134,7 +156,9 @@ export function buildChunkMesh(world, chunk) {
           continue;
         }
         if (SHAPES[id]) {
+          const from = solid.col.length;
           addShape(GLOWS[id] ? glow : solid, x, y, z, id, get); // (a lit luminary glows)
+          if (!GLOWS[id]) dim(solid, from, shadeAt(x, y, z));
           if (isLitLuminary(id) || id === CAMPFIRE) lights.push([ox + x, y, oz + z, 'luminary']); // and lights the room (a campfire too)
           continue;
         }
@@ -156,6 +180,7 @@ export function buildChunkMesh(world, chunk) {
 
           const tile = def[f.side];
           const base = buf.pos.length / 3;
+          const cave = GLOWS[id] ? 1 : shadeAt(x + f.dir[0], y + f.dir[1], z + f.dir[2]); // (the air it faces)
           const ao = [3, 3, 3, 3];
           for (let i = 0; i < 4; i++) {
             const c = f.corners[i];
@@ -172,7 +197,7 @@ export function buildChunkMesh(world, chunk) {
               const cr = occludes(x + k[0], y + k[1], z + k[2]);
               ao[i] = s1 && s2 ? 0 : 3 - (s1 + s2 + cr);
             }
-            const s = f.shade * AO_LEVELS[ao[i]];
+            const s = f.shade * AO_LEVELS[ao[i]] * cave;
             buf.col.push(s, s, s);
           }
           // Split the quad along the diagonal that avoids AO anisotropy.

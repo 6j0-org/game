@@ -63,7 +63,7 @@ export const FOOD = {
   chips: { name: 'Tortilla Chips', heal: 3, dishes: [] },
   povertynachos: { name: 'Poverty Nachos', heal: 8, dishes: ['plate'], allergen: 'lactose' },
   timsnachos: { name: 'Tim\'s Nachos', heal: 13, dishes: ['plate'], allergen: 'lactose' },
-  hummus: { name: 'Hummus', heal: 9, dishes: ['bowl'] },
+  hummus: { name: "Jeddi's Hummus", heal: 9, dishes: ['bowl'] },
   // The healer's
   potion: { name: 'Healing Potion', heal: 10, dishes: [], town: 'healer', drink: true },
   bigpotion: { name: 'Greater Healing Potion', heal: 25, dishes: [], town: 'healer', drink: true },
@@ -135,6 +135,7 @@ export const TOOLS = {
   pillow: { name: 'Couch Pillow', usd: 20, desc: 'PvP: only 1 damage, but sends them flying', damage: 1, knock: 22 },
   hackysack: { name: 'Hackysack', usd: 10, desc: 'PvP: throw it, it bounces, pick it back up', damage: 1, knock: 4, throwDamage: 3, throwKnock: 10 },
   flashlight: { name: 'Flashlight', usd: 25, desc: 'Lights up the dark in front of you while you hold it', damage: 2, knock: 3 },
+  compass: { name: 'Compass', usd: 20, desc: 'Hold it: the red needle points north, the gold one to your current quest', damage: 1, knock: 2 },
   // Guns (see weapons.js). Clicking at close range still works as a clumsy club.
   ...Object.fromEntries(Object.entries(GUNS).map(([k, g]) => [k, { name: g.name, usd: g.usd, desc: g.twoHanded ? `${g.desc} Two-handed.` : g.desc, damage: 3, knock: 4, gun: true, twoHanded: !!g.twoHanded, ...(g.town ? { town: g.town } : {}) }])),
   grapple: { name: GRAPPLE.name, usd: GRAPPLE.usd, desc: GRAPPLE.desc, damage: 2, knock: 3, grapple: true },
@@ -262,7 +263,7 @@ export const SHOPS = {
   blacksmith: { name: 'Blacksmith', greeting: 'Steel for the road. Swords and armor, forged here.', wares: ['dagger', 'sword', 'longsword', 'greatsword', 'leather', 'chainmail', 'platearmor'] },
   healer: { name: 'Healer', greeting: 'Potions to mend you, and an antidote for what ails you.', wares: ['potion', 'bigpotion', 'antidote'] },
   tavern: { name: 'Tavern', greeting: 'Food, drink, and a bed upstairs: right-click one to sleep there (it becomes your spawn point). Baking? We sell yeast and butter.', wares: ['stew', 'pie', 'bread', 'cheese', 'honeycake', 'ale', 'mead', 'cider', 'milk', 'yeast', 'butter'] },
-  fletcher: { name: 'Fletcher', greeting: 'Bows strung to order, and arrows by the bundle.', wares: ['shortbow', 'longbow', 'crossbow', ammoKind('arrows')] },
+  fletcher: { name: 'Fletcher', greeting: 'Bows strung to order, arrows by the bundle, and a compass to find your way home.', wares: ['shortbow', 'longbow', 'crossbow', ammoKind('arrows'), 'compass'] },
   wizard: { name: 'Wizard', greeting: 'Wands, staves, and scrolls. Read a scroll to learn its spell for good; read one of a spell you know to cast it without any mana.', wares: ['wand', 'staff', 'runewand', 'archstaff', 'manapotion', ...Object.keys(SPELLS).map(scrollKind)] },
 };
 /** What `kind` costs at `shop` in dollars (before haggling) and how many you get, or null if it isn't sold there. */

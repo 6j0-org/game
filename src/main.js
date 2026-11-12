@@ -37,6 +37,7 @@ import { SPELLS, SPELL_ORDER, isFocus, spellCost, spellCooldown } from './spells
 import { Phantoms } from './phantoms.js';
 import { COMMANDS, PLACES, MOB_WORDS, commandOf } from './commands.js';
 import { SoundSystem, blockMaterial } from './audio.js';
+import { Music } from './music.js';
 import { withFlashlight, setFlashlights, setLamps } from './flashlight.js';
 import { Voice } from './voice.js';
 import { skillName, title as skillTitle, totalPoints, pointsFor } from './skills.js';
@@ -47,6 +48,7 @@ import { zecFor, usd } from './market.js';
 import { GUNS, AMMO, GRAPPLE } from './weapons.js';
 import { STATS, statEffects, effectText, verdict } from './stats.js';
 import { questGoal, questProgress, questReady, lostName } from './quests.js';
+import { ERRAND_ITEMS, jobUsd, jobSeconds, jobMax } from './jobs.js';
 
 let buildSwitch = null; // { to, t } while the hard hat is going on or off (from the game)
 
@@ -67,7 +69,7 @@ const store = {
 };
 // Client settings (Esc -> Settings): how things look, sound and feel on this computer. Not gameplay, so
 // not Server settings; remembered in this browser.
-const CLIENT_DEFAULTS = { sensitivity: 1, invertY: false, fov: 75, shake: true, info: false, chat: true, renderDistance: 6, resScale: 1, echo: 1, ambient: true, fontScale: 1.25 };
+const CLIENT_DEFAULTS = { sensitivity: 1, fov: 75, shake: true, info: false, chat: true, renderDistance: 6, resScale: 1, echo: 1, ambient: true, music: 0.6, fontScale: 1.25 };
 const prefs = { ...CLIENT_DEFAULTS };
 try { Object.assign(prefs, JSON.parse(store.get('game:client')) || {}); } catch { /* defaults */ }
 const savePrefs = () => store.set('game:client', JSON.stringify(prefs));
@@ -75,6 +77,7 @@ let renderDistance = prefs.renderDistance; // in chunks (Settings: Graphics)
 
 // ---------- sound (browsers only allow it after a click or key press) ----------
 const sound = new SoundSystem(store);
+const music = new Music(sound); // (music.js: generated as it plays; updateMusic picks the mood)
 for (const ev of ['pointerdown', 'keydown']) document.addEventListener(ev, () => sound.unlock(), { capture: true });
 const materialUnder = (pos) => blockMaterial(world.getBlock(Math.floor(pos.x), Math.floor(pos.y - 0.05), Math.floor(pos.z)));
 const centre = (x, y, z) => ({ x: x + 0.5, y: y + 0.5, z: z + 0.5 });
@@ -112,6 +115,7 @@ const buttons = { left: false, right: false }; // mouse buttons held (left = lef
 const world = new World(welcome.seed, null);
 world.setLegacy(welcome.legacy); // chunks frozen on the first generation (before anything generates)
 world.setGen2(welcome.gen2 || []); // and on the second (the one with the Ball Pit)
+world.setGen3(welcome.gen3 || []); // and on the third (before caves)
 for (const [x, y, z, id] of welcome.edits) world.setBlock(x, y, z, id);
 const player = new Player(world);
 player.spawn(welcome.pos);
@@ -148,6 +152,8 @@ function applyYou(y) {
   player.orders = y.orders || [];
   player.buildy = y.buildy;
   player.quests = y.quests || { active: [], cool: [], done: 0 };
+  player.jobs = y.jobs || []; // villagers out working for you (jobs.js)
+  player.lastTill = !!y.lastTill;
   buildSwitch = y.buildSwitch;
   if (!player.buildy && !(player.effects.flight > 0)) player.flying = false; // only Buildy Bois fly (and the Flying spell, while it lasts)
   player.validateHands();
@@ -308,6 +314,7 @@ function updateLamps(dt, lightMul) {
 const effects = new Effects(scene, atlasCanvas);
 const phantoms = new Phantoms(world); // Hallucinate: monsters only you can see
 const mobModels = new MobModels(scene);
+mobModels.shadeAt = (m) => world.caveShadeAt(m.pos.x, m.pos.y + (m.height || 1) / 2, m.pos.z); // dark in caves
 
 // ---------- chunk meshes ----------
 function toMesh(arrays, material, chunk) {
@@ -527,6 +534,7 @@ const ICONS = {
   ammo: [['#556b2f', 1, 4, 14, 9], ['#d9b84a', 1, 6, 14, 2], ['#f2f2f2', 6, 9, 4, 3]],
   surge: [['#9b4dff', 3, 3, 10, 10], ['#f2d9ff', 7, 1, 2, 14], ['#f2d9ff', 1, 7, 14, 2]],
   phone: [['#16181d', 4, 1, 8, 14], ['#ff6ad5', 5, 3, 6, 9], ['#5fd4ff', 7, 5, 3, 4], ['#ffd257', 5, 9, 3, 2], ['#3a3e46', 7, 13, 2, 1]],
+  compass: [['#8a6a24', 4, 2, 8, 12], ['#8a6a24', 2, 4, 12, 8], ['#b08a3a', 5, 3, 6, 10], ['#b08a3a', 3, 5, 10, 6], ['#f2e8cc', 5, 5, 6, 6], ['#f2e8cc', 4, 6, 8, 4], ['#d8322a', 7, 4, 2, 4], ['#3a3e46', 7, 8, 2, 4], ['#b08a3a', 7, 0, 2, 2]],
   flashlight: [['#2b2e34', 6, 5, 4, 10], ['#4a4f58', 6, 11, 4, 1], ['#3a3e46', 5, 2, 6, 3], ['#fff3c4', 6, 1, 4, 1],
     ['#ffe58a', 4, 0, 1, 1], ['#ffe58a', 11, 0, 1, 1], ['#d94a3a', 9, 7, 1, 1]],
   staff: [['#5a4030', 2, 13, 2, 2], ['#5a4030', 4, 11, 2, 2], ['#5a4030', 6, 9, 2, 2], ['#3b2a1e', 8, 7, 2, 2], ['#5a4030', 9, 3, 1, 4],
@@ -1193,7 +1201,6 @@ volumeInput.value = Math.round(sound.volume * 100);
 volumeInput.addEventListener('input', () => {
   sound.unlock();
   sound.setVolume(volumeInput.value / 100);
-  if (sound.muted) sound.toggleMute();
   sound.play('ui');
 });
 volumeInput.addEventListener('keydown', (e) => e.stopPropagation());
@@ -1418,6 +1425,18 @@ function updateAcoustics(dt) {
   voice.setSpace(state);
 }
 const voiceHud = document.getElementById('voice-hud');
+// Music (music.js): about once a second, which mood fits where you are. Caves, Hell and the Backrooms are
+// creepy, the Fantasy Town gets a bard, the Neon City techno, and everywhere else the wistful pastoral.
+let musicT = 0;
+function updateMusic(dt) {
+  if ((musicT -= dt) > 0) return;
+  musicT = 1;
+  const eye = camera.position;
+  const zone = world.biomeAt(Math.floor(eye.x), Math.floor(eye.z)).biome;
+  const mood = world.caveShadeAt(eye.x, eye.y, eye.z) < 0.5 || zone === 'hell' || zone === 'backrooms' ? 'creepy'
+    : zone === 'town' ? 'bard' : zone === 'cyber' ? 'techno' : 'pastoral';
+  music.setMood(player.dead ? null : mood);
+}
 /** Hold Z to whisper or X to shout (multiplayer): changes how far you carry for "nearby only" listeners. */
 function updateVoiceMode() {
   const keys = player.locked && !menuOpen() ? player.keys : new Set();
@@ -1431,12 +1450,6 @@ function updateVoiceMode() {
   if (voiceHud.textContent !== text) voiceHud.textContent = text;
   voiceHud.hidden = !text;
 }
-/** "3D sound for headphones": HRTF panning for game sounds and nearby voices (on the start screen and in the V menu). */
-function setHrtf(on, save = true) {
-  sound.setHrtf(on, save);
-  voice.setHrtf(on);
-  for (const id of ['hrtf', 'voice-hrtf']) { const box = document.getElementById(id); if (box) box.checked = on; }
-}
 
 // ---------- server voice (voice.js) ----------
 // In multiplayer everyone is in one voice channel from the start. Settings > Voice (V jumps there): your
@@ -1445,8 +1458,6 @@ function setHrtf(on, save = true) {
 const voice = new Voice({ send: (msg) => conn.send({ type: 'voice', ...msg }), myId, store, note: (text) => popup(text) });
 voice.occlusion = (a, b) => blocksBetween(getBlock, a, b);
 if (multiplayer) voice.start();
-for (const id of ['hrtf', 'voice-hrtf']) document.getElementById(id)?.addEventListener('change', (e) => setHrtf(e.target.checked));
-setHrtf(sound.hrtf, false); // (just show it: saving here would turn a default into a choice)
 for (const ev of ['pointerdown', 'keydown']) document.addEventListener(ev, () => voice.resume(), { capture: true }); // audio starts on a gesture
 const voiceList = document.getElementById('voice-list');
 let voiceMenuT = 0;
@@ -1519,18 +1530,17 @@ const KEYS = [
   ['Scroll wheel', 'Pick a spell (or none, so empty hands punch and mine)'], ['G (hold)', 'Wash any dirty dish (near water)'],
   ['Tab', 'Map'], ['I', 'Character sheet'], ['J', 'Bestiary'], ['L', 'Quest log'], ['U', 'Take off your armor'], ['T', 'Chat: type a message to everyone (it shows in the message log)'],
   ['V', 'Voice settings (multiplayer)'], ['Z / X (hold)', 'Whisper / shout'], ['/', 'Console: /help, /msg, /teleport, /give, /summon, /skip'],
-  ['P', 'Camera: first person, behind you, facing you'], ['M', 'Mute / unmute sound'], ['F3', 'Info panel'], ['Esc', 'Settings (this)'],
+  ['P', 'Camera: first person, behind you, facing you'], ['F3', 'Info panel'], ['Esc', 'Settings (this)'],
 ];
 document.getElementById('client-keys').replaceChildren(...KEYS.flatMap(([k, d]) => [el('dt', '', k), el('dd', '', d)]));
 const PREF_TEXT = {
-  sensitivity: (v) => `${Math.round(v * 100)}%`, fov: (v) => `${v}°`, echo: (v) => `${Math.round(v * 100)}%`,
+  sensitivity: (v) => `${Math.round(v * 100)}%`, fov: (v) => `${v}°`, echo: (v) => `${Math.round(v * 100)}%`, music: (v) => `${Math.round(v * 100)}%`,
   renderDistance: (v) => `${v} chunks (${v * CS} blocks)`, resScale: (v) => `${Math.round(v * 100)}%`, fontScale: (v) => `${Math.round(v * 100)}%`,
 };
 /** Puts one client setting into effect. */
 function applyPref(key) {
   const v = prefs[key];
   if (key === 'sensitivity') player.sensitivity = v;
-  else if (key === 'invertY') player.invertY = v;
   else if (key === 'fov') BASE_FOV = v; // (the camera eases to it next frame)
   else if (key === 'info') { showInfo = v; infoEl.hidden = !v; }
   else if (key === 'chat') chatEl.classList.toggle('off', !v);
@@ -1538,6 +1548,7 @@ function applyPref(key) {
   else if (key === 'resScale') fitRenderer();
   else if (key === 'echo') { sound.setEcho(v); voice.setEcho(v); }
   else if (key === 'ambient') sound.ambientOn = v;
+  else if (key === 'music') music.setVolume(v);
   else if (key === 'fontScale') document.documentElement.style.setProperty('--fs', String(v)); // every font size in the page's CSS is multiplied by --fs
 }
 function setPref(key, value) {
@@ -1558,14 +1569,12 @@ function syncClient() {
     const key = out.dataset.out;
     out.textContent = key === 'volume' ? `${Math.round(sound.volume * 100)}%` : PREF_TEXT[key](prefs[key]);
   }
-  document.getElementById('muted').checked = sound.muted;
 }
 for (const input of clientEl.querySelectorAll('[data-pref]')) {
   input.addEventListener('input', () => setPref(input.dataset.pref, input.type === 'checkbox' ? input.checked : Number(input.value)));
   input.addEventListener('keydown', (e) => { if (e.code !== 'Escape') e.stopPropagation(); }); // arrow keys adjust it, not the game
 }
 volumeInput.addEventListener('input', () => syncClient());
-document.getElementById('muted').addEventListener('change', (e) => { sound.unlock(); if (e.target.checked !== sound.muted) sound.toggleMute(); });
 // ---------- Settings > Players (Admins: accounts.js, game.js `_admin`) ----------
 const playersTab = document.getElementById('players-tab');
 const playersList = document.getElementById('players-list');
@@ -1591,7 +1600,7 @@ function renderPlayers(list) {
     if (p.admin) tags.append(el('span', '', 'Admin'));
     if (p.banned) tags.append(el('span', 'bad', 'banned'));
     if (p.you) tags.append(el('span', '', 'you'));
-    info.append(el('b', '', p.name), tags, el('small', '', `${p.playing ? `Playing ${p.playing} (level ${p.level}) · ` : ''}Characters: ${p.characters?.join(', ') || 'none'} · ID ${p.uid} · joined ${new Date(p.created).toLocaleDateString()} · seen ${p.online ? 'now' : ago(p.seen)}${p.recovery ? ` · recovery code ${p.recovery}` : ''}`));
+    info.append(el('b', '', p.name), tags, el('small', '', `${p.playing ? `Playing ${p.playing} (level ${p.level}) · ` : ''}Characters: ${p.characters?.join(', ') || 'none'} · ID ${p.uid} · joined ${new Date(p.created).toLocaleDateString()} · seen ${p.online ? 'now' : ago(p.seen)}${p.recovery ? ` · recovery code ${p.recovery} (never expires, works once: tell them to store it in a safe place)` : ''}`));
     const acts = el('div', 'acts');
     const act = (label, op, extra = {}, ask = null) => {
       const b = el('button', '', label);
@@ -1929,6 +1938,8 @@ function showNpc(m) {
   if (m.active && m.ready) buttons.push(npcButton(m.active.kind === 'fetch' ? 'Hand it over' : m.active.kind === 'lost' ? 'Give it back' : 'Tell them it\'s done', () => send('turnin'), true));
   if (m.active && !m.ready) buttons.push(npcButton('Give up this quest', () => send('abandon')));
   if (m.counter && SHOPS[m.role]) buttons.push(npcButton('Browse wares', () => { closeNpc(null); openShop({ ...m.counter, shop: m.role }); }));
+  if (m.hire?.ok) buttons.push(npcButton('Hire for a job…', () => showHire(m)));
+  else if (m.hire?.why && !m.offer && !m.active) document.getElementById('npc-note').textContent ||= m.hire.why;
   buttons.push(npcButton(m.offer ? 'Not now' : 'Goodbye', () => closeNpc(true)));
   npcButtons.replaceChildren(...buttons);
   if (!npcOpen) {
@@ -1939,6 +1950,40 @@ function showNpc(m) {
     releaseMouseForMenu();
   }
 }
+/** Hiring a villager (jobs.js): fetch something, or till around the last block you tilled. The game checks it all again. */
+function showHire(m) {
+  const questEl = document.getElementById('npc-quest');
+  const form = el('div', 'hire');
+  const kind = el('select');
+  kind.append(new Option('Fetch something for me', 'errand'), new Option('Till my garden', 'garden'));
+  const item = el('select');
+  for (const k of ERRAND_ITEMS) item.append(new Option(itemName(k), k));
+  const n = el('input');
+  Object.assign(n, { type: 'number', min: 1, value: 5, step: 1 });
+  const price = el('small', 'hire-price');
+  for (const input of [kind, item, n]) input.addEventListener('keydown', (e) => { if (e.code !== 'Escape') e.stopPropagation(); }); // (typing isn't game input)
+  const hireBtn = npcButton('Hire', () => conn.send({ type: 'job', op: 'hire', id: m.id, kind: kind.value, item: item.value, n: Number(n.value) }), true);
+  const update = () => {
+    const k = kind.value;
+    n.max = jobMax(k);
+    const count = Math.max(1, Math.min(jobMax(k), Math.round(Number(n.value) || 1)));
+    item.hidden = k !== 'errand';
+    const blocked = k === 'garden' && (!m.hire.lastTill ? 'Till a block of your garden yourself first: they work around the last block you tilled.' : !m.hire.tiller ? 'They\'ll need to borrow your Tiller, and you haven\'t got one.' : '');
+    const usdPrice = jobUsd(k, item.value, count);
+    const mins = Math.max(1, Math.round(jobSeconds(k, count) / 60));
+    price.textContent = blocked || `${usd(usdPrice)} (about ${zecFor(usdPrice, rate).toFixed(2)} ZEC), paid now · back in about ${mins} min${k === 'garden' ? ' · they borrow your Tiller and till around the last block you tilled' : ''}`;
+    price.classList.toggle('deny', !!blocked);
+    hireBtn.disabled = !!blocked;
+  };
+  for (const input of [kind, item, n]) input.addEventListener('input', update);
+  form.append(el('div', 'hire-row', ''), price);
+  form.firstChild.append(kind, item, el('span', '', '×'), n);
+  update();
+  questEl.replaceChildren(form);
+  document.getElementById('npc-text').textContent = `“What do you need doing?”`;
+  npcButtons.replaceChildren(hireBtn, npcButton('Back', () => showNpc(m)));
+}
+
 /** `resume`: true goes back to the game, false shows the click-to-resume prompt, null leaves it to whatever opens next. */
 function closeNpc(resume) {
   if (!npcOpen) return;
@@ -1958,22 +2003,30 @@ let questsOpen = false;
 let questsKey = '';
 function renderQuests() {
   const qs = player.quests || { active: [], done: 0 };
+  const jobs = player.jobs || [];
   // Only rebuild (and replace the buttons) when something you'd see has changed.
-  const key = JSON.stringify([qs.active.map((q) => [q.id, questProgress(q, player).have, q.found, rewardUsd(q)]), qs.done, Math.round(rate * 20)]);
+  const key = JSON.stringify([qs.active.map((q) => [q.id, questProgress(q, player).have, q.found, rewardUsd(q)]), qs.done, Math.round(rate * 20),
+    jobs.map((j) => [j.id, Math.ceil(j.left / 60)])]);
   if (key === questsKey) return;
   questsKey = key;
   document.getElementById('quests-done').textContent = `${qs.active.length} / ${settings.maxQuests} on the go · ${qs.done} done`;
-  if (!qs.active.length) {
-    questsList.replaceChildren(el('p', 'none', 'No quests yet. Talk to people in the Fantasy Town: shopkeepers need the makings of their trades, and villagers always want a hand with something. Someone with ❗ over their head has a job for you.'));
-    return;
-  }
-  questsList.replaceChildren(...qs.active.map((q) => {
+  const list = qs.active.length ? qs.active.map((q) => {
     const drop = el('button', '', 'Give up');
     drop.addEventListener('click', () => conn.send({ type: 'quest', op: 'abandon', quest: q.id }));
     const box = questBox(q, drop);
     box.append(el('small', '', `For ${q.name}: “${q.text}”`));
     return box;
-  }));
+  }) : [el('p', 'none', 'No quests yet. Talk to people in the Fantasy Town: shopkeepers need the makings of their trades, and villagers always want a hand with something. Someone with ❗ over their head has a job for you.')];
+  // Villagers you've hired (jobs.js): they're away from the market until they're done.
+  if (jobs.length) {
+    list.push(el('h3', 'jobs-head', 'Working for you'));
+    for (const j of jobs) {
+      const mins = Math.max(1, Math.ceil(j.left / 60));
+      const what = j.kind === 'errand' ? `fetching ${j.n} ${itemName(j.item)}` : `tilling ${j.n} blocks of your garden (with your Tiller)`;
+      list.push(el('div', 'job', `🧺 ${j.name}: ${what} · back in about ${mins} min`));
+    }
+  }
+  questsList.replaceChildren(...list);
 }
 function setQuests(open, resume = false) {
   if (open === questsOpen) return;
@@ -2696,10 +2749,6 @@ document.addEventListener('keydown', (e) => {
     viewMode = (viewMode + 1) % VIEWS.length;
     popup(`Camera: ${VIEWS[viewMode]} (P)`);
   }
-  if (e.code === 'KeyM' && !e.repeat) {
-    popup(sound.toggleMute() ? 'Sound off (M)' : 'Sound on (M)');
-    document.getElementById('muted').checked = sound.muted;
-  }
 });
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 
@@ -3417,7 +3466,7 @@ window.game = {
   openQuests: () => setQuests(true),
   openPhone: () => setPhone(true),
   setRate: (r) => { if (conn.game) conn.game.rate = r; },
-  phoneApps, voice, sound,
+  phoneApps, voice, sound, music,
 };
 
 /** Everyone holding a flashlight (you first, then the nearest players). */
@@ -3446,6 +3495,33 @@ document.addEventListener('keydown', (e) => {
   if (e.code !== 'KeyB' || e.repeat || !player.locked || menuOpen() || player.dead) return;
   conn.send({ type: 'buildy' });
 });
+// The Compass: while it's in either hand, a dial at the top of the screen. Its red needle points north (-z),
+// the gold one to your current quest (the one you took last): the lost thing, the garden, or whoever's waiting.
+const compassEl = document.getElementById('compass');
+const compassNorth = compassEl.querySelector('.north');
+const compassQuest = compassEl.querySelector('.quest');
+function compassTarget() {
+  const active = player.quests?.active || [];
+  const q = active[active.length - 1];
+  if (!q) return null;
+  if (q.spot && !(q.kind === 'lost' && q.found) && !(q.kind === 'till' && (q.progress || 0) >= q.n)) return q.spot;
+  const n = [...remote.npcs.values()].find((o) => o.key === q.giver);
+  if (n) return n.pos;
+  const m = /@(-?\d+),(-?\d+)$/.exec(q.giver || ''); // not around: head for their market square
+  return m ? { x: +m[1], z: +m[2] } : null;
+}
+/** A needle's turn, in degrees clockwise from straight ahead, for a world direction (dx, dz). */
+const needle = (dx, dz) => -((Math.atan2(-dx, -dz) - player.yaw) * 180) / Math.PI;
+function updateCompass() {
+  const on = (player.hands.left === 'compass' || player.hands.right === 'compass') && !player.dead && !phoneOut;
+  compassEl.toggleAttribute('hidden', !on); // (an <svg>: no .hidden property)
+  if (!on) return;
+  compassNorth.setAttribute('transform', `rotate(${needle(0, -1).toFixed(1)})`);
+  const t = compassTarget();
+  compassQuest.style.display = t ? '' : 'none';
+  if (t) compassQuest.setAttribute('transform', `rotate(${needle(t.x - player.pos.x, t.z - player.pos.z).toFixed(1)})`);
+}
+
 const buildyEl = document.getElementById('buildy');
 player.onFlap = () => sound.play('flap');
 const flapEl = document.getElementById('flap');
@@ -3600,6 +3676,7 @@ function frame(now) {
   camera.getWorldDirection(dir);
   sound.setListener(camera.position, dir);
   updateAcoustics(realDt);
+  updateMusic(realDt);
   if ((outdoorsT -= realDt) <= 0) {
     outdoorsT = 1;
     outdoors = true; // sky overhead?
@@ -3892,6 +3969,7 @@ function frame(now) {
   spellFlashT -= realDt;
   updateSpellHud();
   updateBuildyHud();
+  updateCompass();
   updateVault();
   updateLamps(realDt, lightMul);
   updateSheet(realDt);

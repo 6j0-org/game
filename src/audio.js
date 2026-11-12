@@ -449,11 +449,7 @@ export class SoundSystem {
     this.listenerAt = 0;
     this.listener = { x: 0, y: 0, z: 0 };
     const v = parseFloat(store.get('game:volume'));
-    this.volume = Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0.7;
-    this.muted = store.get('game:muted') === '1';
-    // "3D sound for headphones": on unless you've turned it off. (Saved only when you click it, under a new key:
-    // the old 'game:hrtf' was written by every page load, so it doesn't tell us what anyone chose.)
-    this.hrtf = store.get('game:3d-sound') !== '0';
+    this.volume = Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1;
     this.occlusion = null; // (pos) => how much wall is between it and you (main.js sets it)
     this.movers = new Map(); // id -> a continuous sound following something (see MOVERS)
     this.moverAt = 0;
@@ -492,11 +488,11 @@ export class SoundSystem {
 
   /**
    * The announcer: says `text` in the deepest, manliest voice the browser has (speech synthesis; there are
-   * no recorded voices in the game). Quiet when muted, at the game's volume.
+   * no recorded voices in the game). At the game's volume.
    */
   announce(text) {
     const speech = typeof window !== 'undefined' ? window.speechSynthesis : null;
-    if (!speech || this.muted || this.volume === 0 || typeof SpeechSynthesisUtterance === 'undefined') return;
+    if (!speech || this.volume === 0 || typeof SpeechSynthesisUtterance === 'undefined') return;
     if (!this._announcer) { // pick a voice once the browser has listed them: an English male one if it says so
       const voices = speech.getVoices();
       if (voices.length) {
@@ -520,32 +516,19 @@ export class SoundSystem {
     this._applyVolume();
   }
 
-  toggleMute() {
-    this.muted = !this.muted;
-    this.store.set('game:muted', this.muted ? '1' : '0');
-    this._applyVolume();
-    return this.muted;
-  }
-
   _applyVolume() {
     if (!this.master) return;
-    this.master.gain.value = this.muted ? 0 : this.volume * this.volume; // perceptual curve
+    this.master.gain.value = this.volume * this.volume; // perceptual curve
     this.uiBus.gain.value = this.master.gain.value;
-    // Muted, silent or hidden: suspend the whole audio context so it stops using the sound device.
-    const idle = this.muted || this.volume === 0 || document.hidden;
+    // Silent or hidden: suspend the whole audio context so it stops using the sound device.
+    const idle = this.volume === 0 || document.hidden;
     if (idle && this.ctx.state === 'running') this.ctx.suspend();
     else if (!idle && this.ctx.state === 'suspended') this.ctx.resume();
   }
 
-  /** The "3D sound for headphones" option: HRTF panning (also used by voice.js). */
-  setHrtf(on, save = true) {
-    this.hrtf = !!on;
-    if (save) this.store.set('game:3d-sound', on ? '1' : '0');
-    for (const m of this.movers.values()) m.panner.panningModel = this._panModel();
-  }
-
+  /** 3D sound (HRTF panning: direction, above and below too) is always on; voice.js uses it too. */
   _panModel() {
-    return this.hrtf ? 'HRTF' : 'equalpower';
+    return 'HRTF';
   }
 
   /** The "Room echo" setting: 1 normal, 0 none, 2 double. */
@@ -589,7 +572,7 @@ export class SoundSystem {
    * ref (distance at full volume, default 3), material (for steps/breaks), dur (printer).
    */
   play(name, { pos = null, volume = 1, ref = 3, delay = 0, ...opts } = {}) {
-    if (!this.ctx || this.ctx.state !== 'running' || this.muted || !SOUNDS[name]) return;
+    if (!this.ctx || this.ctx.state !== 'running' || !SOUNDS[name]) return;
     if (this.voices >= MAX_VOICES || (this.playing.get(name) || 0) >= MAX_SAME) return;
     if (pos) {
       const d = Math.hypot(pos.x - this.listener.x, pos.y - this.listener.y, pos.z - this.listener.z);
