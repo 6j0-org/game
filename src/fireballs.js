@@ -89,7 +89,7 @@ export class Fireballs {
  * Removes blocks in a slightly ragged sphere around (cx,cy,cz). Water and the
  * y=0 floor are left alone. Returns the removed blocks as [{x,y,z,id}].
  */
-export function explode(world, cx, cy, cz, radius = T.explosionRadius, rand = Math.random) {
+export function explode(world, cx, cy, cz, radius = T.explosionRadius, rand = Math.random, canBreak = null) {
   const removed = [];
   const r = Math.ceil(radius + 0.5);
   for (let y = Math.floor(cy) - r; y <= Math.floor(cy) + r; y++) {
@@ -99,7 +99,7 @@ export function explode(world, cx, cy, cz, radius = T.explosionRadius, rand = Ma
         const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy, z + 0.5 - cz);
         if (d > radius - 0.4 + rand() * 0.8) continue;
         const id = world.getBlock(x, y, z);
-        if (id === AIR || FLUID[id] || UNBREAKABLE[id]) continue;
+        if (id === AIR || FLUID[id] || UNBREAKABLE[id] || (canBreak && !canBreak(x, y, z))) continue; // (canBreak: someone's land, leases.js)
         world.setBlock(x, y, z, AIR);
         removed.push({ x, y, z, id });
       }

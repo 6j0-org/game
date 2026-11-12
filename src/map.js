@@ -54,7 +54,7 @@ export class MapView {
   }
 
   /**
-   * @param me      { x, z, yaw, name, bed: {x,y,z}|null, quests?: [{ x, z, label, color }] }
+   * @param me      { x, z, yaw, name, bed: {x,y,z}|null, quests?: [{ x, z, label, color }], leases?: [{ cx, cz, mine }] }
    * @param others  [{ id, name, x, z }]
    */
   draw(me, others) {
@@ -71,6 +71,17 @@ export class MapView {
     ctx.drawImage(this.terrain, 0, 0, W, W);
     ctx.font = 'bold 13px system-ui, sans-serif';
     ctx.textAlign = 'center';
+
+    // Land (leases.js): yours in green, other people's in red.
+    for (const l of me.leases || []) {
+      const [lx, ly] = toPx(l.cx * 16, l.cz * 16);
+      const s = 16 * scale;
+      if (lx + s < 0 || ly + s < 0 || lx > W || ly > W) continue;
+      ctx.fillStyle = l.mine ? 'rgba(95, 210, 120, 0.25)' : 'rgba(230, 80, 70, 0.22)';
+      ctx.strokeStyle = l.mine ? 'rgba(95, 210, 120, 0.8)' : 'rgba(230, 80, 70, 0.7)';
+      ctx.fillRect(lx, ly, s, s);
+      ctx.strokeRect(lx + 0.5, ly + 0.5, s - 1, s - 1);
+    }
 
     for (const p of others) {
       let [px, py] = toPx(p.x, p.z);

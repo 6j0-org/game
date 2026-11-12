@@ -366,6 +366,10 @@
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     #idbar small { font-weight: 400; opacity: 0.7; margin-left: 6px; }
     #idbar[hidden], body.sheet-open #idbar { display: none; }
+    #land { position: fixed; top: 12px; left: 16px; padding: 4px 12px; border-radius: 999px; pointer-events: none; max-width: calc(50vw - 120px);
+      background: rgba(10, 14, 24, 0.72); border: 1px solid var(--panel-border); font: 600 calc(13px * var(--fs)) system-ui, sans-serif; color: var(--text);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #land[hidden], body.sheet-open #land { display: none; }
     /* The ultimate meter (bottom right): it glows when it's ready (H), and pulses while it's going. */
     #ult { position: fixed; right: 16px; bottom: 16px; width: min(280px, calc(50vw - 40px)); box-sizing: border-box; padding: 7px 12px; border-radius: 10px; pointer-events: none;
       background: var(--panel); border: 1px solid var(--panel-border); font-size: calc(13px * var(--fs)); color: #ffe9a8; }
@@ -919,6 +923,7 @@
   <div id="buildy" hidden></div>
   <div id="flap" hidden></div>
   <div id="idbar" hidden></div>
+  <div id="land" hidden></div>
   <svg id="compass" hidden viewBox="-50 -50 100 100" aria-label="Compass">
     <circle r="47" fill="#b08a3a" /><circle r="41" fill="#f2e8cc" /><circle r="41" fill="none" stroke="#8a6a24" stroke-width="1.5" />
     <path d="M0 -41 V-35 M0 41 V35 M-41 0 H-35 M41 0 H35" stroke="#8a6a24" stroke-width="2" /><!-- ticks; the top is where you're facing -->

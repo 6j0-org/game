@@ -25,6 +25,9 @@ export const AMMO = {
   arrows: { name: 'Arrows', box: 20, weight: 0, town: true }, // sold by the town's fletcher (weight 0: not in monsters' crates)
 };
 
+/** Guns with a magazine (`mag` rounds; R to reload, ammo in the other hand: game.js `_reload`). Bows aren't: arrows go one at a time. `loadOne`: a click loads one round (shells, rockets), not a full magazine. */
+export const usesMag = (kind) => !!GUNS[kind]?.mag;
+
 /**
  * type: 'hitscan' (instant), 'rail' (instant, pierces), 'rocket' / 'orb' (projectiles), 'arrow' (an arrow that arcs
  * as it flies and hits what it meets; `speed` and `gravity`). `town`: sold only at that shop in the Fantasy Town.
@@ -32,19 +35,19 @@ export const AMMO = {
  * twoHanded: held in both hands at once (only the pistol is one-handed).
  */
 export const GUNS = {
-  pistol: { name: 'Pistol', usd: 40, ammo: 'bullets', per: 1, type: 'hitscan', damage: 9, pellets: 1, spread: 0.004, range: 64, cooldown: 0.32, knock: 3,
+  pistol: { name: 'Pistol', usd: 40, ammo: 'bullets', per: 1, mag: 12, type: 'hitscan', damage: 9, pellets: 1, spread: 0.004, range: 64, cooldown: 0.32, knock: 3,
     desc: 'Reliable single shots. Uses bullets.' },
-  shotgun: { name: 'Shotgun', usd: 90, ammo: 'shells', per: 1, type: 'hitscan', damage: 6, pellets: 8, spread: 0.07, range: 28, cooldown: 0.9, knock: 4, twoHanded: true,
+  shotgun: { name: 'Shotgun', usd: 90, ammo: 'shells', per: 1, mag: 6, loadOne: true, type: 'hitscan', damage: 6, pellets: 8, spread: 0.07, range: 28, cooldown: 0.9, knock: 4, twoHanded: true,
     desc: 'Eight pellets at once. Brutal up close. Uses shells.' },
-  machinegun: { name: 'Machine Gun', usd: 150, ammo: 'bullets', per: 1, type: 'hitscan', damage: 6, pellets: 1, spread: 0.025, range: 56, cooldown: 0.09, knock: 1.5, twoHanded: true,
+  machinegun: { name: 'Machine Gun', usd: 150, ammo: 'bullets', per: 1, mag: 30, type: 'hitscan', damage: 6, pellets: 1, spread: 0.025, range: 56, cooldown: 0.09, knock: 1.5, twoHanded: true,
     desc: 'Hold to spray. Eats bullets. Uses bullets.' },
-  rocket: { name: 'Rocket Launcher', usd: 250, ammo: 'rockets', per: 1, type: 'rocket', damage: 1.2, radius: 3.3, speed: 26, cooldown: 0.85, knock: 0, twoHanded: true,
+  rocket: { name: 'Rocket Launcher', usd: 250, ammo: 'rockets', per: 1, mag: 1, loadOne: true, type: 'rocket', damage: 1.2, radius: 3.3, speed: 26, cooldown: 0.85, knock: 0, twoHanded: true,
     desc: 'Explodes on impact, blocks and all. Mind the splash. Uses rockets.' },
-  sniper: { name: 'Sniper Rifle', usd: 350, ammo: 'rifle', per: 1, type: 'hitscan', damage: 45, pellets: 1, spread: 0.06, range: 220, cooldown: 1.4, knock: 6, twoHanded: true, scope: true,
+  sniper: { name: 'Sniper Rifle', usd: 350, ammo: 'rifle', per: 1, mag: 5, type: 'hitscan', damage: 45, pellets: 1, spread: 0.06, range: 220, cooldown: 1.4, knock: 6, twoHanded: true, scope: true,
     desc: 'Bolt-action, long range, and wild from the hip. Right-click for the scope: 5×, 10×, 20×, then off. Uses rifle rounds.' },
-  railgun: { name: 'Railgun', usd: 400, ammo: 'slugs', per: 1, type: 'rail', damage: 60, range: 96, cooldown: 1.6, knock: 10, twoHanded: true,
+  railgun: { name: 'Railgun', usd: 400, ammo: 'slugs', per: 1, mag: 4, type: 'rail', damage: 60, range: 96, cooldown: 1.6, knock: 10, twoHanded: true,
     desc: 'An instant beam that goes through everything in a line. Uses slugs.' },
-  overcharge: { name: 'Overcharge Cannon', usd: 900, ammo: 'cells', per: 30, type: 'orb', damage: 2, radius: 5.5, speed: 9, cooldown: 2.5, knock: 0, twoHanded: true,
+  overcharge: { name: 'Overcharge Cannon', usd: 900, ammo: 'cells', per: 30, mag: 90, type: 'orb', damage: 2, radius: 5.5, speed: 9, cooldown: 2.5, knock: 0, twoHanded: true,
     zapRadius: 7, zapDamage: 7, zapEvery: 0.3, desc: 'A slow orb that zaps everything near its path, then detonates hugely. 30 cells a shot.' },
   // Bows, from the fletcher.
   shortbow: { name: 'Shortbow', usd: 45, ammo: 'arrows', per: 1, type: 'arrow', damage: 7, speed: 30, gravity: 10, cooldown: 0.3, knock: 3, twoHanded: true, town: 'fletcher', draw: 0.6,

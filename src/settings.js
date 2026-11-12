@@ -4,7 +4,7 @@
 // SETTINGS, and validates, loads and formats them. The game owns the values (`game.settings` is `T`),
 // saves them with the world, and sends them in 'welcome' and in 'settings' messages. No Three.js or DOM.
 
-import { T, TUNABLES, tune, setTuning } from './tuning.js';
+import { T, TUNABLES, tune, setTuning, bindTunable } from './tuning.js';
 import { GUNS } from './weapons.js';
 import { SPELLS, MAGIC_DEFAULTS as M } from './spells.js';
 // These register their settings when they load:
@@ -31,6 +31,7 @@ import './npcs.js';
 import './quests.js';
 import './jobs.js';
 import './ultimates.js';
+import './leases.js';
 
 export { T, setTuning };
 
@@ -89,6 +90,7 @@ for (const [k, g] of Object.entries(GUNS)) {
     [`rate_${k}`]: [rate, `${g.name} fire rate`, 'Shots per second while you hold the button', x(0.1, Math.max(1, nice(rate * 4)), 0.1, '/s')],
   });
 }
+for (const [k, g] of Object.entries(GUNS)) if (g.mag) bindTunable(g, 'mag', 'Weapons', `mag_${k}`, `${g.name} magazine`, `Rounds of ${g.ammo} it holds before you have to reload (R)`, { min: 1, max: 500, step: 1 });
 tune('Weapons', {
   shotgunPellets: [GUNS.shotgun.pellets, 'Shotgun pellets', 'Pellets per shell', x(1, 30, 1, '')],
   shotgunSpread: [nice((GUNS.shotgun.spread * 180) / Math.PI), 'Shotgun spread', 'How widely the pellets scatter', x(0, 20, 0.5, '°')],

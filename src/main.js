@@ -23,7 +23,7 @@ import { BESTIARY, bestiaryFacts } from './bestiary.js';
 import { Effects } from './effects.js';
 import { Sky } from './sky.js';
 import { ammoCount, meleeStyle } from './items.js';
-import { FOOD, DISHES, TOOLS, TRAITS, BLOCK_PRINTS, shopCatalog, shopOffer, printUsd, inventoryList, filterItems, tabComplete, itemName, itemCount, blockKind, blockIdOf, isMiningKind, isGun, isTwoHanded,
+import { FOOD, DISHES, TOOLS, TRAITS, BLOCK_PRINTS, shopCatalog, shopOffer, printUsd, ammoOf, inventoryList, filterItems, tabComplete, itemName, itemCount, blockKind, blockIdOf, isMiningKind, isGun, isTwoHanded,
   SHOPS, townCatalog, townOffer, isArmor, scrollOf, allItems, giveDefault } from './items.js';
 import { Picker } from './picker.js';
 import { TileShop } from './tileshop.js';
@@ -35,7 +35,7 @@ import { daylight, lightMultiplier, clockString } from './daycycle.js';
 import { SETTINGS, SETTING_GROUPS, loadSettings, settingText, gunStats, T, setTuning } from './settings.js';
 import { SPELLS, SPELL_ORDER, isFocus, spellCost, spellCooldown } from './spells.js';
 import { Phantoms } from './phantoms.js';
-import { COMMANDS, PLACES, MOB_WORDS, commandOf } from './commands.js';
+import { COMMANDS, PLACES, MOB_WORDS, ULT_WORDS, commandOf } from './commands.js';
 import { SoundSystem, blockMaterial } from './audio.js';
 import { Music } from './music.js';
 import { Fishes } from './fishes.js';
@@ -48,7 +48,7 @@ import { blocksBetween, probeSpace } from './acoustics.js';
 import { PhoneApps } from './phone.js';
 import { MapView } from './map.js';
 import { zecFor, usd } from './market.js';
-import { GUNS, AMMO, GRAPPLE } from './weapons.js';
+import { GUNS, AMMO, GRAPPLE, usesMag } from './weapons.js';
 import { STATS, statEffects, effectText, verdict } from './stats.js';
 import { questGoal, questProgress, questReady, lostName } from './quests.js';
 import { ERRAND_ITEMS, jobUsd, jobSeconds, jobMax } from './jobs.js';
@@ -105,6 +105,23 @@ const welcome = conn.welcome;
 const myId = welcome.id;
 const identity = { name: welcome.name, uid: welcome.uid, look: welcome.look || null }; // your Player (and character)
 let isAdmin = !!welcome.admin; // Admins get Settings > Players
+// Land (leases.js, multiplayer): "cx,cz" -> { owner (uid), name, allow }. The game checks everything; we
+// check too, so a block you may not touch doesn't flicker.
+const leases = new Map();
+const setLeases = (list) => { leases.clear(); for (const [k, owner, name, allow] of list || []) leases.set(k, { owner, name, allow }); };
+setLeases(welcome.leases);
+const leaseAt = (x, z) => leases.get(`${Math.floor(x) >> 4},${Math.floor(z) >> 4}`) || null;
+let landToldAt = 0;
+/** Not allowed to `action` (place, break, modify) at (x, z): says so (now and then) and returns true. */
+function landBlocked(x, z, action) {
+  const l = leaseAt(x, z);
+  if (!l || l.owner === identity.uid || l.allow[action] || isAdmin) return false;
+  if (performance.now() > landToldAt) {
+    landToldAt = performance.now() + 1500;
+    popup(`🔒 This is ${l.name}'s land: they haven't allowed others to ${action} here`, 'deny');
+  }
+  return true;
+}
 let time = welcome.time;
 let rate = welcome.rate; // USD per ZEC, from the game
 const rateHistory = [rate]; // about one sample a second, for the printer's price chart
@@ -156,6 +173,10 @@ function applyYou(y) {
   player.buildy = y.buildy;
   player.quests = y.quests || { active: [], cool: [], done: 0 };
   player.ult = y.ult ?? 0; // the ultimate meter (ultimates.js)
+  player.mags = y.mags || {}; // rounds loaded in each gun (weapons.js `mag`)
+  const wasReloading = player.reloading;
+  player.reloading = y.reloading ? { ...y.reloading, other: y.reloading.hand === 'left' ? 'right' : 'left' } : null; // (validateHands keeps the gun in one hand)
+  if (wasReloading && !player.reloading) player.validateHands(wasReloading.hand === 'left' ? 'right' : 'left'); // done: a two-handed gun takes both hands again
   player.ultKey = y.ultKey || 'secondwind';
   player.ultOn = y.ultOn || null; // { key, t } while one's going
   player.jobs = y.jobs || []; // villagers out working for you (jobs.js)
@@ -699,6 +720,7 @@ function potteryIcon(obj, clay, glaze = 0, { lit = false, raw = false, wet = fal
 }
 function iconFor(kind) {
   if (scrollOf(kind)) return pixelIcon('scroll');
+  if (ammoOf(kind)) return pixelIcon(kind === 'ammo:arrows' && ICONS.arrow ? 'arrow' : 'ammo');
   if (FOOD[kind]?.cookedFrom && ICONS[FOOD[kind].cookedFrom] && !ICONS[kind]) { // cooked: the raw food, browned
     const c = pixelIcon(FOOD[kind].cookedFrom);
     const ctx = c.getContext('2d');
@@ -1066,6 +1088,7 @@ function onMessage(m) {
           : "The game server doesn't know that item. It's probably running older code: restart the server.";
       sound.play('deny');
       break;
+    case 'leases': setLeases(m.list); break; // someone's land changed (leases.js)
     case 'settings':
       setTuning(loadSettings(m.settings));
       settingsPanel.update();
@@ -1154,6 +1177,11 @@ function applyFx(m) {
     case 'frost': effects.frost(m.x, m.y, m.z); sound.play('frost', { pos }); break;
     case 'bonk': sound.play('thunk', { pos, ref: 4, volume: 1.2 }); if (m.by === myId) shake = Math.max(shake, 0.12); break; // a tall head meets a ceiling
     case 'milk': sound.play('splash', { pos, volume: 0.3, ref: 2 }); effects.sparkle(m.x, m.y, m.z); break; // a cow milked
+    case 'reload': // someone reloading (game.js `_reload`): a clack to start, a click per load, a clack when done
+      if (m.by !== myId && !nearMe(m, 20)) break;
+      sound.play('empty', { pos: m.by === myId ? undefined : m, p: m.step === 'load' ? 1.4 : 0.7, volume: m.step === 'load' ? 0.8 : 1 });
+      if (m.step === 'load') sound.play('chip', { pos: m.by === myId ? undefined : m, material: 'stone', volume: 0.5 });
+      break;
     case 'breath': // Dragon's Breath: a roar of fire (or one puff of a held stream: lighter, quieter)
       if (m.stream) {
         effects.breath(m.x, m.y, m.z, { x: m.dx, y: m.dy, z: m.dz }, m.range, m.arc, 40);
@@ -1565,7 +1593,7 @@ let clientTab = store.get('game:client-tab') || 'controls';
 let played = false; // been in the game yet? (before that, losing the mouse shows the title card)
 const KEYS = [
   ['WASD', 'Move'], ['Mouse', 'Look'], ['Space', 'Jump, swim up, fly up'], ['Shift', 'Sprint (also flies faster)'],
-  ['C', "Crouch (won't walk off edges), fly down, dive"], ['F', 'Toggle flying (Buildy Bois, or with the Flying spell)'], ['K', 'Recipe book'], ['R', 'Crafting'], ['B', 'Buildy Boi mode on/off (10 s)'],
+  ['C', "Crouch (won't walk off edges), fly down, dive"], ['F', 'Toggle flying (Buildy Bois, or with the Flying spell)'], ['K', 'Recipe book'], ['R', 'Reload the gun in your hand (then click with the ammo in your other hand, and R again); with no gun, crafting'], ['B', 'Buildy Boi mode on/off (10 s)'],
   ['Q / E (tap)', 'Choose what\'s in your left / right hand (drag things onto that hand\'s hotbar)'], ['Q / E (hold) + scroll', 'Switch to the next thing on that hand\'s hotbar'], ['Left / right click', 'Use your left / right hand: place, mine (hold), attack, cast, fire, eat, read a scroll, put on armor, open your phone. Right-clicking a door, bed, counter, Cold Wallet or printer uses it. Click a townsperson to talk'],
   ['Right click (hold)', 'Aim down sights with a two-handed gun or bow'], ['Middle click', 'Put the block you\'re looking at in your right hand'],
   ['Scroll wheel', 'Pick a spell (or none, so empty hands punch and mine)'], ['G (hold)', 'Wash any dirty dish (near water)'],
@@ -1810,7 +1838,9 @@ function completeConsole() {
     ? Object.entries(COMMANDS).flatMap(([k, c]) => [k, ...(c.aliases || [])]).map((k) => `/${k}`)
     : cmd === 'give' ? [...(words.length === 2 ? names : []), ...allItems().flatMap((i) => [i.word, i.name.toLowerCase().replace(/[^a-z0-9]/g, '')])] // (short ids, and full names run together)
       : cmd === 'summon' ? [...(words.length === 2 ? names : []), ...MOB_WORDS]
-        : [...names, ...PLACES];
+        : cmd === 'ultimate' ? (words.length === 2 ? ULT_WORDS : [])
+          : cmd === 'land' ? (words.length === 2 ? ['allow', 'deny', 'release'] : words.length === 3 && /^(allow|deny)$/i.test(words[1]) ? ['place', 'break', 'modify'] : [])
+            : [...names, ...PLACES];
   const matches = [...new Set(options.filter((o) => o.toLowerCase().startsWith(last)))];
   if (!matches.length) return;
   let common = matches[0];
@@ -2485,7 +2515,12 @@ document.getElementById('crafting-close').addEventListener('click', () => closeC
 document.addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT' && !(craftingOpen && e.code === 'Escape')) return;
   if (craftingOpen && (e.code === 'Escape' || (e.code === 'KeyR' && e.target.tagName !== 'INPUT'))) { e.stopPropagation(); closeCrafting(false); return; }
-  if (e.code === 'KeyR' && !e.repeat && !menuOpen() && player.locked) openCrafting();
+  if (e.code === 'KeyR' && !e.repeat && !menuOpen() && player.locked) {
+    // With a gun that takes a magazine in hand, R reloads (game.js `_reload`): R, click with the ammo hand, R again.
+    const gunHand = player.reloading?.hand || ['left', 'right'].find((h) => usesMag(player.hands[h]));
+    if (gunHand && !player.dead) { conn.send({ type: 'reload', op: player.reloading ? 'done' : 'start', hand: gunHand }); sound.play('empty'); return; }
+    openCrafting();
+  }
 });
 
 // The recipe book (K, or 📖 Recipes in the main menu): every recipe, by where you make it.
@@ -3046,7 +3081,7 @@ document.addEventListener('keydown', (e) => {
 /** What the maps show: you (with your bed) and everyone else's phone. */
 function mapArgs() {
   return [
-    { x: player.pos.x, z: player.pos.z, yaw: player.yaw, bed: player.bed, quests: questMapMarks() },
+    { x: player.pos.x, z: player.pos.z, yaw: player.yaw, bed: player.bed, quests: questMapMarks(), leases: [...leases].map(([k, l]) => { const [cx, cz] = k.split(',').map(Number); return { cx, cz, mine: l.owner === identity.uid }; }) },
     [...remote.players.values()].filter((p) => !p.invisible).map((p) => ({ id: p.id, name: p.name, x: p.pos.x, z: p.pos.z })), // (invisible players stay off the map)
   ];
 }
@@ -3279,6 +3314,12 @@ function updateSpellHud(changed = false) {
 /** One click with a hand. Held-button effects (mining, wand, washing, guns, aiming) run in the frame loop. */
 function useHand(hand) {
   const kind = player.hands[hand];
+  if (ammoOf(kind)) { // ammo in hand: a click loads the gun you're reloading (R)
+    buttons[hand] = false;
+    if (player.reloading && hand === player.reloading.other) { conn.send({ type: 'reload', op: 'load', hand }); swing(hand); }
+    else popup('To reload: hold a gun, press R, then click with the ammo in your other hand (R again when you\'re done)');
+    return;
+  }
   if (targetEnt?.kind === 'npc') { // townsfolk: either button talks to them
     buttons[hand] = false;
     conn.send({ type: 'talk', id: targetEnt.id });
@@ -3352,7 +3393,7 @@ function useHand(hand) {
       placed = LADDER + (nz === 1 ? 0 : nx === -1 ? 1 : nz === -1 ? 2 : 3);
     }
     const headAt = id === BED ? bedOther(BED_FOOT + facingOf(player.yaw), x, z) : null; // beds are two long, head away from you
-    if (free(x, y, z) && (id !== DOOR || free(x, y + 1, z)) && (!headAt || free(headAt[0], y, headAt[1]))) {
+    if (free(x, y, z) && (id !== DOOR || free(x, y + 1, z)) && (!headAt || free(headAt[0], y, headAt[1])) && !landBlocked(x, z, 'place')) {
       recentEdits.set(`${x},${y},${z}`, performance.now());
       sound.play('place', { pos: centre(x, y, z), material: blockMaterial(id) });
       world.setBlock(x, y, z, headAt ? BED_FOOT + facingOf(player.yaw) : placed); // show it now; the game confirms or corrects
@@ -3568,6 +3609,17 @@ document.addEventListener('keydown', (e) => {
   if (e.code !== 'KeyB' || e.repeat || !player.locked || menuOpen() || player.dead) return;
   conn.send({ type: 'buildy' });
 });
+// Whose land you're on (top left; leases.js): yours, or someone else's and what they let you do.
+const landEl = document.getElementById('land');
+function updateLandHud() {
+  const l = multiplayer ? leaseAt(player.pos.x, player.pos.z) : null;
+  const mine = l && l.owner === identity.uid;
+  const allowed = l && !mine ? Object.keys(l.allow).filter((a) => l.allow[a]) : [];
+  const text = !l ? '' : mine ? '🏠 Your land' : `🔒 ${l.name}'s land${allowed.length ? ` · you may ${allowed.join(', ')}` : ''}`;
+  if (landEl.textContent !== text) landEl.textContent = text;
+  landEl.hidden = !text;
+}
+
 // The ultimate meter (bottom right): your class's ultimate, how charged it is, and H when it's ready.
 const ultEl = document.getElementById('ult');
 const ultFill = ultEl.querySelector('.ult-fill');
@@ -3709,7 +3761,13 @@ function updateWeaponHud() {
   for (const hand of ['left', 'right']) {
     const gun = GUNS[player.hands[hand]];
     if (gun && hand === 'right' && isTwoHanded(player.hands.right)) continue; // listed once
-    if (gun) lines.push(`${isTwoHanded(player.hands[hand]) ? '⇄' : hand === 'left' ? 'L' : 'R'} ${gun.name}: ${player.buildy ? '∞' : player.ammo[gun.ammo] || 0} ${AMMO[gun.ammo].name.toLowerCase()}`);
+    if (!gun) continue;
+    const kind = player.hands[hand];
+    const spare = player.buildy ? '∞' : player.ammo[gun.ammo] || 0;
+    const side = isTwoHanded(kind) ? '⇄' : hand === 'left' ? 'L' : 'R';
+    if (!usesMag(kind)) lines.push(`${side} ${gun.name}: ${spare} ${AMMO[gun.ammo].name.toLowerCase()}`);
+    else if (player.reloading?.gun === kind) lines.push(`${side} ${gun.name}: ${player.mags[kind] || 0}/${GUNS[kind].mag} 🔄 RELOADING (click with the ammo, R when done) · ${spare} spare`);
+    else lines.push(`${side} ${gun.name}: ${player.buildy ? '∞' : `${player.mags[kind] || 0}/${GUNS[kind].mag}`} · ${spare} spare${!player.buildy && !(player.mags[kind] > 0) ? ' · R to reload' : ''}`);
   }
   const text = lines.join('\n');
   if (ammoEl.textContent !== text) ammoEl.textContent = text;
@@ -3870,17 +3928,20 @@ function frame(now) {
     }
     if (!buttons[hand] || !isGun(kind) || gunCooldown[hand] > 0) continue;
     const gun = gunStats(kind, settings);
-    const freeAmmo = ultBuff(myUlt(), 'ammo', false); // (Fan the Hammer, Boomstick, Bullet Hose)
-    if (!freeAmmo && ammoCount(player, gun.ammo) < gun.per) {
+    const freeAmmo = ultBuff(myUlt(), 'ammo', false) || player.buildy; // (Fan the Hammer, Boomstick, Bullet Hose; Buildy Bois)
+    const mag = usesMag(kind); // shots come out of the magazine (R reloads it)
+    if (player.reloading) continue;
+    if (!freeAmmo && (mag ? (player.mags[kind] || 0) < gun.per : ammoCount(player, gun.ammo) < gun.per)) {
       if (emptyT <= 0) {
         emptyT = 0.4;
         sound.play('empty');
-        popup(`Out of ${AMMO[gun.ammo].name.toLowerCase()}: ${AMMO[gun.ammo].town ? 'buy more at a town fletcher' : 'print or order more'}`);
+        popup(mag ? `Click. Empty: press R to reload (${ammoCount(player, gun.ammo)} ${AMMO[gun.ammo].name.toLowerCase()} spare)`
+          : `Out of ${AMMO[gun.ammo].name.toLowerCase()}: ${AMMO[gun.ammo].town ? 'buy more at a town fletcher' : 'print or order more'}`);
       }
       continue;
     }
     gunCooldown[hand] = gun.cooldown / ultBuff(myUlt(), 'rate', 1);
-    if (!player.buildy && !freeAmmo) player.ammo[gun.ammo] -= gun.per; // shown right away; the game confirms
+    if (!freeAmmo) { if (mag) player.mags[kind] -= gun.per; else player.ammo[gun.ammo] -= gun.per; } // shown right away; the game confirms
     const o = camera.position.clone().addScaledVector(dir, 0.6);
     conn.send({ type: 'fire', hand, aim: aiming, o: { x: o.x, y: o.y, z: o.z }, d: { x: dir.x, y: dir.y, z: dir.z } });
     sound.play(gun.type === 'arrow' ? 'bow' : kind, { volume: 0.8 });
@@ -3956,7 +4017,7 @@ function frame(now) {
   attackCooldown -= realDt;
   const mineHand = ['left', 'right'].find((h) => buttons[h] && isMiningKind(player.hands[h]) && !(h === 'right' && canAim())
     && !(player.hands[h] === 'empty' && currentSpell() !== 'none')); // (an empty hand casts the picked spell instead) // (an aiming right hand doesn't mine)
-  const mining = !!mineHand && handsFree && target && !targetEnt && target.y > 0; // y=0 is unbreakable
+  const mining = !!mineHand && handsFree && target && !targetEnt && target.y > 0 && !landBlocked(target.x, target.z, 'break'); // y=0 is unbreakable; someone's land
   myMineHand = mining ? mineHand : null;
   if (mining) {
     const key = `${target.x},${target.y},${target.z}`;
@@ -4102,6 +4163,7 @@ function frame(now) {
   updateSpellHud();
   updateBuildyHud();
   updateUltHud();
+  updateLandHud();
   updateCompass();
   updateVault();
   updateLamps(realDt, lightMul);

@@ -34,13 +34,14 @@ import { AIR, WATER, ICE, FLUID, LAVA, WHEAT, HOTBAR, COLD_WALLET, SOLID, SHAPES
 import { daylight } from './daycycle.js';
 import { nextRate, zecFor, round2 } from './market.js';
 import { STATS, rollStats, statEffects, withBonus, migrateStats } from './stats.js';
-import { GUNS, AMMO, spreadDir } from './weapons.js';
+import { GUNS, AMMO, spreadDir, usesMag } from './weapons.js';
 import { VoiceRoom } from './voiceroom.js';
 import { runCommand } from './commands.js';
 import { BESTIARY } from './bestiary.js';
 import { GARDEN_TOOLS, TILLABLE, till, water, torch, newDay, harvest, canPlant } from './garden.js';
 import { Npcs } from './npcs.js';
 import { ULTIMATES, ultFor, ultBuff, ultMelee } from './ultimates.js';
+import { Leases, landKey, LAND_ACTIONS } from './leases.js';
 import { cleanJobs, cleanJob, jobUsd, jobSeconds, tillAround } from './jobs.js';
 import { cleanQuests, questOffer, offerSeed, questReady, questGoal, questAsk, lostName, hello, thanks } from './quests.js';
 import { forageFind } from './forage.js';
@@ -144,6 +145,7 @@ export class Game {
     this.throwables = new Throwables(this.world);
     this.fireballs = new Fireballs(this.world);
     this.drones = new Drones(rand); // CONSUME deliveries in flight
+    this.leases = new Leases(store); // land (leases.js): multiplayer only
     this.npcs = new Npcs(this.world, rand); // the Fantasy Town's people (npcs.js), out when someone's near a market
     this.mobs.onHit = (mob, amount, src) => { if (src?.cause === 'player') this._ultCharge(this.players.get(src.byId), T.ultChargeHit); }; // (ultimates.js)
     this.npcs.busy = (key) => [...this.players.values()].some((o) => o.p.jobs.some((j) => j.npc === key)); // away on a job (jobs.js)
@@ -264,6 +266,7 @@ export class Game {
     p.buildy = !!saved.buildy;
     p.quests = cleanQuests(saved.quests); // (quests.js)
     p.jobs = cleanJobs(saved.jobs); // (jobs.js)
+    p.mags = Object.fromEntries(Object.entries(saved.mags || {}).filter(([k, n]) => usesMag(k) && Number.isInteger(n) && n > 0).map(([k, n]) => [k, Math.min(n, GUNS[k].mag)])); // loaded guns
     p.lastTill = saved.lastTill && [saved.lastTill.x, saved.lastTill.y, saved.lastTill.z].every(Number.isInteger) ? { x: saved.lastTill.x, y: saved.lastTill.y, z: saved.lastTill.z } : null;
     if (typeof saved.worn === 'string' && isArmor(saved.worn)) { p.worn = saved.worn; p.wornFree = !!saved.wornFree; }
     for (const h of ['left', 'right']) if (typeof saved.hands?.[h] === 'string') p.hands[h] = saved.hands[h];
@@ -311,7 +314,7 @@ export class Game {
     e.lastYou = JSON.stringify(you);
     send({
       type: 'welcome', protocol: PROTOCOL, id: e.id, name: e.name, uid, look: e.look, admin: !!this.accounts.get(uid)?.admin, multiplayer: this.multiplayer,
-      seed: this.seed, time: this.time, rate: this.rate, settings: { ...this.settings }, edits: this.world.allEdits(), legacy: [...this.world.legacy], gen2: [...this.world.gen2], gen3: [...this.world.gen3], pos: { ...p.pos }, hands: { ...p.hands }, you,
+      seed: this.seed, time: this.time, rate: this.rate, settings: { ...this.settings }, edits: this.world.allEdits(), legacy: [...this.world.legacy], gen2: [...this.world.gen2], gen3: [...this.world.gen3], leases: this.multiplayer ? this.leases.forClients() : [], pos: { ...p.pos }, hands: { ...p.hands }, you,
     });
     if (this.multiplayer) this._broadcast({ type: 'msg', text: `${e.name} joined`, kind: 'join' }, e);
     if (firstTime) e.send({ type: 'msg', text: traitText(p.traits), kind: 'trait' });
@@ -358,6 +361,8 @@ export class Game {
       case 'stat': return this._addStat(e, msg); // the character sheet: works any time
       case 'trait': return this._trait(e, msg); // buying a trait off (the character sheet)
       case 'ult': return this._ult(e); // let your ultimate go (H)
+      case 'reload': return this._reload(e, msg); // R, then click with the ammo hand, then R again
+      case 'land': return this._land(e, msg); // your land's rules (leases.js; the /land command)
       case 'breathe': return this._stopBreath(e); // let go of Dragon's Breath (always allowed)
       default:
     }
@@ -514,6 +519,7 @@ export class Game {
 
   _place(e, { x, y, z, id }) {
     if (![x, y, z].every(Number.isInteger) || y < 0 || y >= CH || !Number.isInteger(id)) return;
+    if (!this._mayLand(e, x, z, 'place')) return this._correct(e, x, y, z);
     const base = baseId(id); // stairs facing east are still "Stairs" in your hand
     const kind = `block:${base}`;
     const door = isDoor(id);
@@ -544,6 +550,7 @@ export class Game {
       return;
     }
     this.world.setBlock(x, y, z, bed ? bed.foot : id);
+    this._landEdit(e, x, z);
     if (bed) this.world.setBlock(bed.at[0], y, bed.at[1], id); // the head half
     if (!e.p.buildy) { // Buildy Bois have unlimited blocks; everyone else uses one up
       e.p.blocks[base]--;
@@ -679,7 +686,7 @@ export class Game {
     } else if (op === 'rename' && a) {
       const r = this.accounts.rename(uid, cleanName(name));
       if (r.error) note(r.error, true);
-      else if (online) { online.name = r.name; online.send({ type: 'renamed', name: r.name }); this.voice.update(); }
+      else { this.leases.renameOwner(uid, r.name); if (online) { online.name = r.name; online.send({ type: 'renamed', name: r.name }); this.voice.update(); } }
     } else if (op === 'kick' && online) {
       if (online === e) return note('You can\'t kick yourself.', true);
       online.send({ type: 'kicked', reason: 'An Admin removed you from the server.' });
@@ -699,6 +706,7 @@ export class Game {
       if (online) { online.send({ type: 'kicked', reason: 'An Admin deleted your Player.' }); this.leave(online.id); }
       for (const cid of Object.keys(this.accounts.characters(uid))) this.savePlayer(`${uid}.${cid}`, null); // (and every character's saves)
       this.accounts.remove(uid);
+      this.leases.renameOwner(uid, null); // (their land is free again)
       note(`Deleted ${a.name}`);
     } else if (op !== 'list') return;
     const onlineIds = new Set([...this.players.values()].map((o) => o.uid));
@@ -751,6 +759,7 @@ export class Game {
     if (![x, y, z].every(Number.isInteger) || (e.gardenCd || 0) > performance.now()) return;
     const kind = this._holding(e, hand, (k) => k in GARDEN_TOOLS);
     if (!kind || !(itemCount(e.p, kind) > 0) || !this._within(e, x + 0.5, y + 0.5, z + 0.5)) return;
+    if (!this._mayLand(e, x, z, 'modify')) return;
     e.gardenCd = performance.now() + 250;
     const action = GARDEN_TOOLS[kind];
     const n = action === 'till' ? till(this.world, x, y, z, Number.isInteger(facing) ? facing : 0)
@@ -758,6 +767,7 @@ export class Game {
     this._fx({ type: 'garden', action, by: e.id, x: x + 0.5, y: y + 1, z: z + 0.5, n });
     if (n) this._skill(e, kind);
     if (n && action === 'till') e.p.lastTill = { x, y, z }; // (a hired gardener works around it: jobs.js)
+    if (n) this._landEdit(e, x, z);
     if (n && action === 'till') this._tilledFor(e, x, y, z, n);
     if (!n && action === 'till') e.send({ type: 'msg', kind: 'deny', text: 'Till dirt or grass with nothing on top' });
     if (!n && action !== 'till') e.send({ type: 'msg', kind: 'deny', text: `Aim at your garden (tilled dirt) to ${action === 'water' ? 'water' : 'weed'} it` });
@@ -836,6 +846,8 @@ export class Game {
   /** Open or close a door (both halves) or a trapdoor. */
   _use(e, { x, y, z }) {
     if (![x, y, z].every(Number.isInteger)) return;
+    if (!this._mayLand(e, x, z, 'modify')) return this._correct(e, x, y, z);
+    this._landEdit(e, x, z);
     const id = this.world.getBlock(x, y, z);
     if (!(isDoor(id) || isTrapdoor(id) || isLuminary(id)) || !this._within(e, x + 0.5, y + 0.5, z + 0.5)) return this._correct(e, x, y, z);
     if (isLuminary(id)) { // light it, or put it out
@@ -855,10 +867,12 @@ export class Game {
 
   _break(e, { x, y, z }) {
     if (![x, y, z].every(Number.isInteger) || y <= 0 || y >= CH) return; // y=0 is the unbreakable floor
+    if (!this._mayLand(e, x, z, 'break')) return this._correct(e, x, y, z);
     const existing = this.world.getBlock(x, y, z);
     const ok = (isMiningKind(e.p.hands.left) || isMiningKind(e.p.hands.right)) && this._within(e, x + 0.5, y + 0.5, z + 0.5);
     if (!ok || existing === AIR || FLUID[existing] || UNBREAKABLE[existing]) return this._correct(e, x, y, z);
     this.world.setBlock(x, y, z, AIR);
+    this._landEdit(e, x, z);
     const got = baseId(existing);
     if (!e.p.buildy && got in e.p.blocks) e.p.blocks[got]++; // you keep what you break (Buildy Bois don't need to)
     // A block broken with the right tool: a point for that tool.
@@ -1186,6 +1200,125 @@ export class Game {
     this._sendYou(e);
   }
 
+  // ---------- reloading (weapons.js `mag`) ----------
+
+  /**
+   * `reload` { op, hand }. 'start' (R with a gun in `hand`): the gun goes into one hand, the other's free for
+   * its ammo. 'load' (a click with the ammo in the other hand): a magazine's worth (or one shell or rocket) goes
+   * in. 'done' (R again): finished, and a two-handed gun takes both hands again.
+   */
+  _reload(e, { op, hand }) {
+    const p = e.p;
+    const r = p.reloading;
+    if (op === 'start') {
+      if (r) return this._reload(e, { op: 'done' });
+      const gun = this._holding(e, hand, usesMag);
+      if (!gun || p.dead) return;
+      if ((p.mags[gun] || 0) >= GUNS[gun].mag) return e.send({ type: 'msg', text: `Your ${itemName(gun)} is already full (${GUNS[gun].mag})` });
+      const other = hand === 'left' ? 'right' : 'left';
+      p.reloading = { gun, hand, other };
+      p.validateHands(); // (a two-handed gun lets go with the other hand)
+      e.send({ type: 'msg', kind: 'event', text: `🔄 Reloading: hold ${AMMO[GUNS[gun].ammo].name} in your ${other} hand and click with it, then press R again` });
+      this._fx({ type: 'reload', by: e.id, step: 'start', x: r2(p.pos.x), y: r2(p.pos.y + 1), z: r2(p.pos.z) });
+    } else if (op === 'load') {
+      if (!r || hand !== r.other) return;
+      const def = GUNS[r.gun];
+      const space = def.mag - (p.mags[r.gun] || 0);
+      const have = ammoCount(p, def.ammo);
+      if (!(have > 0)) return e.send({ type: 'msg', kind: 'deny', text: `You're out of ${AMMO[def.ammo].name.toLowerCase()}` });
+      if (p.hands[hand] !== `ammo:${def.ammo}`) return e.send({ type: 'msg', kind: 'deny', text: `That's not ${AMMO[def.ammo].name.toLowerCase()}: hold ${AMMO[def.ammo].name} in your ${hand} hand` });
+      if (space <= 0) return e.send({ type: 'msg', text: `Full (${def.mag}): press R to finish reloading` });
+      if (!(have > 0)) return e.send({ type: 'msg', kind: 'deny', text: `You're out of ${AMMO[def.ammo].name.toLowerCase()}` });
+      const n = Math.min(space, have, def.loadOne ? 1 : space);
+      spend(p, 'ammo', def.ammo, n);
+      p.mags[r.gun] = (p.mags[r.gun] || 0) + n;
+      p.validateHands(hand); // (that might have been the last of it)
+      this._fx({ type: 'reload', by: e.id, step: 'load', x: r2(p.pos.x), y: r2(p.pos.y + 1), z: r2(p.pos.z) });
+      if (p.mags[r.gun] >= def.mag) e.send({ type: 'msg', text: `Full (${def.mag}): press R to finish reloading` });
+    } else if (op === 'done') {
+      if (!r) return;
+      p.reloading = null;
+      p.validateHands(r.hand === 'left' ? 'right' : 'left'); // (a two-handed gun takes both hands again)
+      this._fx({ type: 'reload', by: e.id, step: 'done', x: r2(p.pos.x), y: r2(p.pos.y + 1), z: r2(p.pos.z) });
+    }
+    this._sendYou(e);
+  }
+
+  // ---------- land (leases.js) ----------
+
+  /** May `e` do `action` (place, break, modify) at (x, z)? If not, they're told whose land it is. */
+  _mayLand(e, x, z, action) {
+    if (!this.multiplayer || this.leases.may(e.uid, x, z, action) || this.accounts.get(e.uid)?.admin) return true;
+    const now = Date.now();
+    if ((e.landDenyAt || 0) < now) {
+      e.landDenyAt = now + 1500;
+      const l = this.leases.at(x, z);
+      e.send({ type: 'msg', kind: 'deny', text: `🔒 This is ${l.name}'s land: they haven't allowed others to ${LAND_ACTIONS[action]} here` });
+    }
+    return false;
+  }
+
+  /** Can an explosion (by `source`) break a block at (x, z)? Not on land whose owner hasn't allowed breaking. */
+  _landBreakable(source, x, z) {
+    if (!this.multiplayer) return true;
+    const by = source?.cause === 'player' ? this.players.get(source.byId) : null;
+    return by ? this.leases.may(by.uid, x, z, 'break') || !!this.accounts.get(by.uid)?.admin : !this.leases.at(x, z);
+  }
+
+  /** `e` changed something at (x, z): that counts towards claiming the chunk. */
+  _landEdit(e, x, z) {
+    (e.landEdited ??= new Set()).add(landKey(x, z));
+  }
+
+  /** Time in each chunk: leaseMinutes (and an edit) in one nobody owns makes it yours; your own renews. */
+  _tickLand(e, dt) {
+    const p = e.p;
+    if (p.dead) return;
+    const k = landKey(p.pos.x, p.pos.z);
+    e.landTime ??= new Map();
+    const t = (e.landTime.get(k) || 0) + dt;
+    e.landTime.set(k, t);
+    const l = this.leases.at(p.pos.x, p.pos.z);
+    if (l) {
+      if (l.owner === e.uid && ((e.landRenewT = (e.landRenewT || 0) - dt) <= 0)) { e.landRenewT = 60; this.leases.renew(k); }
+      return;
+    }
+    if (t < T.leaseMinutes * 60 || !e.landEdited?.has(k)) return;
+    if (T.leaseMax > 0 && this.leases.count(e.uid) >= T.leaseMax) {
+      if (!e.landFullTold) { e.landFullTold = true; e.send({ type: 'msg', kind: 'deny', text: `🏠 You already lease ${Math.round(T.leaseMax)} chunks of land: release some (/land release) to claim more` }); }
+      return;
+    }
+    const name = this.accounts.get(e.uid)?.name || e.name;
+    this.leases.claim(k, e.uid, name);
+    e.send({ type: 'msg', kind: 'level', text: `🏠 This land is yours now (a ${CS}×${CS} chunk): nobody else can build, break or use things here unless you let them. Type /land to see your options.` });
+  }
+
+  /** `land` { op: 'allow', action, on } or { op: 'release' }: the rules for the chunk you're standing in (yours, or any, for Admins). */
+  _land(e, { op, action, on }) {
+    if (!this.multiplayer) return e.send({ type: 'console', text: 'There are no leases in single player.' });
+    const p = e.p;
+    const k = landKey(p.pos.x, p.pos.z);
+    const l = this.leases.at(p.pos.x, p.pos.z);
+    const admin = !!this.accounts.get(e.uid)?.admin;
+    if (op === 'info') {
+      if (!l) return e.send({ type: 'console', text: `Nobody owns this chunk (${k}). Spend ${T.leaseMinutes} minutes here and change something, and it's yours.` });
+      const days = Math.max(0, Math.ceil((l.expires - Date.now()) / 86400000));
+      const rules = Object.keys(LAND_ACTIONS).map((a) => `${a}: ${l.allow[a] ? 'allowed' : 'not allowed'}`).join(', ');
+      return e.send({ type: 'console', text: `${l.owner === e.uid ? 'Your land' : `${l.name}'s land`} (chunk ${k}, ${days} days left on the lease). Others: ${rules}.` });
+    }
+    if (!l || (l.owner !== e.uid && !admin)) return e.send({ type: 'console', text: 'This isn\'t your land.', error: true });
+    if (op === 'allow' && action in LAND_ACTIONS) {
+      this.leases.allow(k, action, !!on);
+      return e.send({ type: 'console', text: `Others ${on ? 'may now' : 'may no longer'} ${LAND_ACTIONS[action]} here.` });
+    }
+    if (op === 'release') {
+      this.leases.release(k);
+      (e.landEdited ??= new Set()).delete(k); // (it won't claim itself straight back)
+      return e.send({ type: 'console', text: `You let go of chunk ${k}: anyone can build here now.` });
+    }
+    return undefined;
+  }
+
   // ---------- ultimates (ultimates.js) ----------
 
   /** A hit in combat: charges `e`'s meter by `n` % (not while one's going, and not for Buildy Bois). */
@@ -1217,12 +1350,16 @@ export class Game {
     this._sendYou(e);
   }
 
-  /** `ult`: let your ultimate go, if the meter's full. Which one is your class's (your best skill's). */
-  _ult(e) {
+  /**
+   * `ult`: let your ultimate go, if the meter's full. Which one is your class's (your best skill's), unless
+   * `force` names one (the /ultimate command: any ultimate, now, for testing; behind the cheats setting).
+   */
+  _ult(e, force = null) {
     const p = e.p;
-    if (p.dead || p.buildy || p.effects.polymorph > 0 || e.ultOn) return;
+    if (force && ULTIMATES[force]) { if (e.ultOn) this._ultEnd(e); p.ult = 100; }
+    if (p.dead || p.effects.polymorph > 0 || e.ultOn || (p.buildy && !force)) return;
     if (p.ult < 100) return e.send({ type: 'msg', kind: 'deny', text: `Your ultimate isn't charged yet (${Math.floor(p.ult)}%): land some hits` });
-    const key = ultFor(p.skills);
+    const key = force && ULTIMATES[force] ? force : ultFor(p.skills);
     const def = ULTIMATES[key];
     p.ult = 0;
     e.ultHitT = 99;
@@ -1250,7 +1387,7 @@ export class Game {
       else for (const o of this.players.values()) if (!o.p.dead && (o === e || this._dist(o.p.pos, p.pos) <= T.ultHealRadius)) { heal(o.p, def.power); this._sendYou(o); }
     } else if (def.kind === 'warp') this._teleport(e, this._ultWarpTo(e), `⚡ ${def.name}!`);
     if (def.kind !== 'heal' && def.kind !== 'warp') this._reveal(e);
-    e.send({ type: 'msg', kind: 'level', text: `⚡ ${def.name}!` });
+    e.send({ type: 'msg', kind: 'level', text: `⚡ ${def.name.replace(/!$/, '')}!` });
     this._sendYou(e);
   }
 
@@ -1572,10 +1709,12 @@ export class Game {
     const p = e.p;
     const cd = `${hand}:${kind}`; // per hand, so two pistols can both fire
     const ult = e.ultOn?.key; // (Fan the Hammer, Boomstick, Bullet Hose, Deadeye, Overload, Rally: ultimates.js)
-    const freeAmmo = ultBuff(ult, 'ammo', false);
-    if ((e.gunCd[cd] || 0) > 0 || (!freeAmmo && ammoCount(p, gun.ammo) < gun.per)) return;
+    const freeAmmo = ultBuff(ult, 'ammo', false) || p.buildy; // (Buildy Bois never reload)
+    const mag = usesMag(kind); // from the magazine (R reloads it); bows straight from your arrows
+    if (p.reloading || (e.gunCd[cd] || 0) > 0) return;
+    if (!freeAmmo && (mag ? (p.mags[kind] || 0) < gun.per : ammoCount(p, gun.ammo) < gun.per)) return;
     e.gunCd[cd] = (gun.cooldown * 0.9) / ultBuff(ult, 'rate', 1); // a little slack for network timing
-    if (!freeAmmo) spend(p, 'ammo', gun.ammo, gun.per);
+    if (!freeAmmo) { if (mag) p.mags[kind] -= gun.per; else spend(p, 'ammo', gun.ammo, gun.per); }
     if (gun.pellets) gun.pellets = Math.round(gun.pellets * ultBuff(ult, 'pellets', 1)); // (gunStats gives us our own copy)
     if (gun.spread) gun.spread *= ultBuff(ult, 'spread', 1);
     if (gun.knock) gun.knock *= ultBuff(ult, 'knock', 1);
@@ -1855,6 +1994,9 @@ export class Game {
     e.packed = true;
     const items = {};
     let any = false;
+    for (const [gun, n] of Object.entries(p.mags)) if (n > 0 && GUNS[gun]) p.ammo[GUNS[gun].ammo] = (p.ammo[GUNS[gun].ammo] || 0) + n; // (loaded rounds go in the bag too)
+    p.mags = {};
+    p.reloading = null;
     for (const inv of ['tools', 'food', 'dishes', 'blocks', 'scrolls', 'ammo', 'unfired', 'materials']) {
       const held = Object.fromEntries(Object.entries(p[inv] || {}).filter(([, n]) => n > 0));
       if (inv === 'tools' && p.worn && !p.wornFree) held[p.worn] = (held[p.worn] || 0) + 1; // (armor comes off)
@@ -2113,7 +2255,9 @@ export class Game {
       this._tickQuests(e);
       this._tickJobs(e);
       if (e.breathing) this._tickBreath(e, dt);
+      if (p.reloading && p.hands[p.reloading.hand] !== p.reloading.gun) this._reload(e, { op: 'done' }); // (put the gun away: that's the end of that)
       this._tickUlt(e, dt);
+      if (this.multiplayer) this._tickLand(e, dt);
       if (p.dead && !e.deathTold) { // tell everyone how it happened (the message log)
         e.deathTold = true;
         this._broadcast({ type: 'msg', kind: 'death', text: this._deathText(e) });
@@ -2191,6 +2335,10 @@ export class Game {
     this.messes = this.messes.filter((m) => (m.age += dt) < T.messLifetime);
     this._backpacks(dt, entries);
 
+    if (this.leases.changed) { // someone's land changed hands (or its rules did)
+      this.leases.changed = false;
+      if (this.multiplayer) this._broadcast({ type: 'leases', list: this.leases.forClients() });
+    }
     if (this.changes.length) {
       this._broadcast({ type: 'blocks', list: this.changes });
       this.changes = [];
@@ -2305,7 +2453,7 @@ export class Game {
   }
 
   _detonate(x, y, z, radius, mult = 1, source = null) {
-    const removed = explode(this.world, x, y, z, radius, this.rand);
+    const removed = explode(this.world, x, y, z, radius, this.rand, (bx, by, bz) => this._landBreakable(source, bx, bz)); // (not on someone else's land)
     this.mobs.blast(x, y, z, radius, [...this.players.values()].map((e) => e.p), mult, source);
     this._fx({ type: 'explode', x, y, z, radius, removed: removed.map((b) => [b.x, b.y, b.z, b.id]) });
   }
@@ -2614,6 +2762,7 @@ export class Game {
       orders: p.orders.map((o) => ({ kind: o.kind, t: Math.max(0, Math.ceil(o.t)), drone: !!o.drone })),
       food: { ...p.food }, dishes: { ...p.dishes }, wallet: { ...p.wallet }, tools: { ...p.tools }, materials: { ...p.materials }, spells: [...p.spells], hotbars: { left: [...p.hotbars.left], right: [...p.hotbars.right] },
       scrolls: { ...p.scrolls }, worn: p.worn,
+      mags: { ...p.mags }, reloading: p.reloading ? { gun: p.reloading.gun, hand: p.reloading.hand } : null,
       ult: Math.floor(p.ult), ultKey: ultFor(p.skills), ultOn: e.ultOn ? { key: e.ultOn.key, t: Math.max(0, Math.ceil(e.ultOn.t)) } : null,
       quests: this._questsYou(p),
       jobs: p.jobs.map((j) => ({ id: j.id, name: j.name, kind: j.kind, item: j.item, n: j.n, left: Math.max(0, Math.ceil((j.due - Date.now()) / 1000)) })), lastTill: !!p.lastTill,
@@ -2668,7 +2817,7 @@ export class Game {
     this.savePlayer(e.token, {
       name: e.name, seed: this.seed, pos: p.dead ? null : { ...p.pos }, traits: p.traits, stats: p.baseStats, statBonus: p.statBonus, statPoints: p.statPoints,
       food: p.food, dishes: p.dishes, wallet: p.wallet, tools: p.tools, materials: p.materials, spells: p.spells, hotbars: p.hotbars, hands: p.hands, ammo: p.ammo, scrolls: p.scrolls, worn: p.worn,
-      skills: p.skills, cleaned: p.cleaned, bed: p.bed, quests: p.quests, jobs: p.jobs, lastTill: p.lastTill, blocks: p.blocks, buildy: p.buildy, wornFree: !!p.wornFree, unfired: p.unfired, kiln: p.kiln, cooking: p.cooking,
+      skills: p.skills, cleaned: p.cleaned, bed: p.bed, quests: p.quests, mags: p.mags, jobs: p.jobs, lastTill: p.lastTill, blocks: p.blocks, buildy: p.buildy, wornFree: !!p.wornFree, unfired: p.unfired, kiln: p.kiln, cooking: p.cooking,
       orders: p.orders.map((o) => ({ kind: o.kind, t: Math.max(0, o.t) })), // a drone in flight is sent again next time
     });
   }

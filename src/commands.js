@@ -16,6 +16,7 @@ import { findItem, giveDefault, giveItem, itemName } from './items.js';
 import { MOB_TYPES } from './mobs.js';
 import { BESTIARY } from './bestiary.js';
 import { SOLID } from './blocks.js';
+import { ULTIMATES } from './ultimates.js';
 
 tune('World', {
   teleport: [true, 'Teleporting', 'Anyone can use /teleport: to coordinates, a player, the spawn, their bed or the nearest town'],
@@ -29,6 +30,8 @@ export const COMMANDS = {
   summon: { usage: '/summon [player] <mob> [count]', desc: 'Summons creatures in front of you (or someone): /summon zombie 5, /summon knife penguin' },
   msg: { usage: '/msg <player> <text>', desc: 'A private message to one player (anything typed without a / goes to everyone)', aliases: ['tell', 'w'] },
   skip: { usage: '/skip', desc: 'Skips ahead a quarter of a day (single player)' },
+  ultimate: { usage: '/ultimate [name]', desc: 'Lets any ultimate go right now, whatever your class (for testing): /ultimate silverware cyclone. With no name, lists them all', aliases: ['ult'] },
+  land: { usage: '/land [allow|deny place|break|modify] | /land release', desc: 'Your land (multiplayer): who owns the chunk you\'re in; let others place, break or modify (use doors and garden tools) there, or not; or give it up', aliases: ['lease'] },
 };
 const MAX_GIVE = 9999;
 const MAX_SUMMON = 20;
@@ -45,6 +48,8 @@ export function findMob(text) {
   return starts.length === 1 ? { mob: starts[0] } : { matches: starts };
 }
 /** What to type for each mob (for Tab completion): type ids, and Bestiary names run together. */
+/** What to type for each ultimate (Tab completion): keys, and names run together. */
+export const ULT_WORDS = [...new Set(Object.entries(ULTIMATES).flatMap(([k, u]) => [k, u.name.toLowerCase().replace(/[^a-z0-9]/g, '')]))];
 export const MOB_WORDS = [...new Set([...Object.keys(MOB_TYPES), ...BESTIARY.map((b) => b.name.toLowerCase().replace(/[^a-z0-9]/g, ''))])];
 /** Words that can stand in for a place. */
 export const PLACES = ['spawn', 'bed', 'town'];
@@ -89,6 +94,26 @@ export function runCommand(game, e, line) {
   if (!cmd) return [{ text: `Unknown command /${words[0]}. Type /help for the list.`, error: true }];
   if (cmd === 'help') return Object.values(COMMANDS).map((c) => ({ text: `${c.usage}  ${c.desc}` }));
   if (cmd === 'give' || cmd === 'summon') return giveOrSummon(game, e, cmd, args);
+  if (cmd === 'ultimate') { // (a cheat: game.js `_ult` with a forced ultimate)
+    if (!game.settings.cheats) return [{ text: 'Cheat commands are off on this server (Settings > Server: Cheat commands).', error: true }];
+    const c = (t) => t.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const q = c(args.join(' '));
+    const all = Object.entries(ULTIMATES);
+    if (!q) return [{ text: 'Ultimates (/ultimate <name>):' }, ...all.map(([k, u]) => ({ text: `${u.name} (${k}): ${u.desc}` }))];
+    const hits = all.filter(([k, u]) => c(k) === q || c(u.name) === q);
+    const found = hits.length ? hits : all.filter(([k, u]) => c(k).startsWith(q) || c(u.name).startsWith(q));
+    if (found.length !== 1) return [{ text: found.length ? `Which one? ${found.map(([, u]) => u.name).join(', ')}` : `No ultimate called "${args.join(' ')}". Type /ultimate for the list.`, error: true }];
+    game._ult(e, found[0][0]);
+    return [{ text: `⚡ ${found[0][1].name.replace(/!$/, '')}!` }];
+  }
+  if (cmd === 'land') { // (game.js `_land` answers on the console itself)
+    const [op, action] = [args[0]?.toLowerCase(), args[1]?.toLowerCase()];
+    if (!op || op === 'info') game._land(e, { op: 'info' });
+    else if (op === 'release' || op === 'unclaim') game._land(e, { op: 'release' });
+    else if ((op === 'allow' || op === 'deny') && ['place', 'break', 'modify'].includes(action)) game._land(e, { op: 'allow', action, on: op === 'allow' });
+    else return [{ text: 'Usage: /land, /land allow place, /land deny break, /land allow modify, /land release', error: true }];
+    return [];
+  }
   if (cmd === 'skip') {
     if (game.multiplayer) return [{ text: 'Skipping time only works in single player (everyone shares the clock).', error: true }];
     const before = game.time;

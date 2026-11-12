@@ -240,7 +240,7 @@ const AMMO_USD = { bullets: 8, shells: 8, rockets: 20, slugs: 15, cells: 12, arr
 const RAW_BLOCKS = { usd: 2, n: 8 }; // natural blocks you'd otherwise mine
 const SEEDS = { usd: 3, n: 4 }; // a packet of seeds on CONSUME
 export const ammoKind = (type) => `ammo:${type}`;
-const ammoOf = (kind) => (typeof kind === 'string' && kind.startsWith('ammo:') && kind.slice(5) in AMMO ? kind.slice(5) : null);
+export const ammoOf = (kind) => (typeof kind === 'string' && kind.startsWith('ammo:') && kind.slice(5) in AMMO ? kind.slice(5) : null);
 /** What one order of `kind` costs in dollars (before fees and haggling) and how many you get, or null. */
 export function shopOffer(kind) {
   if (kind in TOOLS) return TOOLS[kind].town || TOOLS[kind].crafted ? null : { usd: TOOLS[kind].usd, n: 1 };
@@ -500,6 +500,9 @@ export function inventoryList(player, hand = null) {
   }
   for (const spell of Object.keys(SPELLS)) {
     if (itemCount(player, scrollKind(spell)) > 0) list.push({ kind: scrollKind(spell), category: 'Scroll', desc: player.spells?.includes(spell) || player.buildy ? `Click to read it: casts ${SPELLS[spell].name} for free (used up)` : `Click to read it: learn ${SPELLS[spell].name} (used up), then cast it with mana` });
+  }
+  for (const k of Object.keys(AMMO)) { // ammo: hold it in your other hand to reload a gun (R)
+    if (itemCount(player, ammoKind(k)) > 0) list.push({ kind: ammoKind(k), category: 'Ammo', desc: k === 'arrows' ? 'Your bows shoot these' : 'Reloading: hold a gun, press R, then click with this in your other hand' });
   }
   for (const [k, def] of Object.entries(MATERIALS)) {
     if (itemCount(player, k) > 0) list.push({ kind: k, category: 'Material', desc: def.found ? def.desc : `${def.desc} (crafting: R)` });

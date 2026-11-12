@@ -595,7 +595,8 @@ function cookedShape(kind) {
   return raw && DROP_SHAPES[raw] ? DROP_SHAPES[raw].map(([w, h, d, c, ...rest]) => [w, h, d, darker(c), ...rest]) : null;
 }
 export function buildHeldModel(kind, material) {
-  const shape = TOOL_SHAPES[kind] || DROP_SHAPES[kind] || cookedShape(kind) || (typeof kind === 'string' && kind.startsWith('scroll:') ? TOOL_SHAPES.scroll : null);
+  const shape = TOOL_SHAPES[kind] || DROP_SHAPES[kind] || cookedShape(kind) || (typeof kind === 'string' && kind.startsWith('scroll:') ? TOOL_SHAPES.scroll : null)
+    || (typeof kind === 'string' && kind.startsWith('ammo:') ? DROP_SHAPES.ammo : null); // (a box of ammo, held for reloading)
   return shape ? part(material, shape) : null;
 }
 

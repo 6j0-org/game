@@ -65,6 +65,8 @@ export class Player extends Body {
     this.spells = []; // the spells you know (learned by reading their scrolls: spells.js)
     this.hotbars = { left: Array(8).fill(null), right: Array(8).fill(null) }; // what you've put on each hand's hotbar (item kinds)
     this.materials = Object.fromEntries(Object.keys(MATERIALS).map((k) => [k, 0])); // crafting materials (crafting.js)
+    this.mags = {}; // gun kind -> rounds loaded (weapons.js `mag`; R reloads: game.js `_reload`)
+    this.reloading = null; // { gun, hand, other } while reloading: the gun sits in one hand, ammo goes in the other
     this.ult = 0; // the ultimate meter, 0-100 (ultimates.js; the game owns it)
     this.ultResist = 1; // damage taken while an ultimate (Unbreakable, Rally) is on
     this.jobs = []; // villagers out working for you (jobs.js); the game owns them, sent in `you`
@@ -137,6 +139,11 @@ export class Player extends Body {
     for (const hand of ['left', 'right']) {
       if (!(itemCount(this, this.hands[hand]) > 0)) this.hands[hand] = 'empty';
     }
+    const r = this.reloading; // reloading: the gun in one hand (even a two-handed one), the other free for ammo
+    if (r && this.hands[r.hand] === r.gun) {
+      if (this.hands[r.other] === r.gun) this.hands[r.other] = 'empty';
+      return;
+    }
     const other = emptyFirst === 'left' ? 'right' : 'left';
     if (isTwoHanded(this.hands[other])) this.hands[emptyFirst] = this.hands[other];
     else if (isTwoHanded(this.hands[emptyFirst])) this.hands[other] = this.hands[emptyFirst];
@@ -154,7 +161,7 @@ export class Player extends Body {
       this.hands.left = this.hands.right = kind;
       return;
     }
-    if (isTwoHanded(this.hands[other])) this.hands[other] = 'empty';
+    if (isTwoHanded(this.hands[other]) && !(this.reloading && this.hands[other] === this.reloading.gun)) this.hands[other] = 'empty'; // (a gun being reloaded stays put)
     this.hands[hand] = kind;
     if (this.hands[other] === kind && itemCount(this, kind) < 2) this.hands[other] = 'empty';
   }
