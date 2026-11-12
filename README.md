@@ -53,7 +53,7 @@ Players open `https://…:8000` and accept the browser's warning about the self-
 
 **LibreWolf / hardened Firefox and voice:** privacy settings can stop voice from connecting on a local network. If you see "Couldn't connect voice to …", check `about:config`: `media.peerconnection.enabled` must be `true`, and `media.peerconnection.ice.no_host` must be `false` (it hides your local network address, which is exactly what voice between computers on the same Wi-Fi needs).
 
-**Server settings:** they're the **🛠 Server** tab in **Settings** (the main menu's **Server settings** button opens it straight away). **Every gameplay number in the game is a setting** (about 380, in groups: World, Player, Health & XP, Food & traits, Stats, Monsters & animals, Items & tools, Blocks, Economy, Weapons, Magic): movement and gravity, health and XP, every food, dish, trait and stat effect, every creature's health, speed, damage and spawn odds, every tool and block price, break times, loot chances, coin values, the Zcash market, drones, ammo and so on. Among them, anyone playing can change: monster spawns, animals & birds, monster loot (Zcash and ammo drops), day length, fall damage and PvP; Zcash volatility, CONSUME delivery time and fee, and 3D print time; every gun's damage and fire rate, plus the shotgun's pellets and spread; and all of magic: max mana and regeneration (and how much Smartness changes them), Wand/Staff potency, spell range, and every spell's mana cost, cooldown, damage, duration and other numbers. Type to search them, like the Q/E picker: names and section names (World, Economy, Weapons) by the start of a word, descriptions anywhere; Tab completes a name and Esc clears the search. Changes apply to everyone at once (everyone gets a message saying who changed what) and are saved with the world. In single player they're your world's settings.
+**Server settings:** they're the **🛠 Server** tab in **Settings** (the main menu's **Server settings** button opens it straight away). **Every gameplay number in the game is a setting** (about 380, in groups: World, Player, Health & XP, Food & traits, Stats, Monsters & animals, Items & tools, Blocks, Economy, Weapons, Magic): movement and gravity, health and XP, every food, dish, trait and stat effect, every creature's health, speed, damage and spawn odds, every tool and block price, break times, loot chances, coin values, the Zcash market, drones, ammo and so on. Among them, anyone playing can change: monster spawns, animals & birds, monster loot (Zcash and ammo drops), day length, fall damage and PvP; Zcash volatility, CONSUME delivery time and fee, and 3D print time; every gun's damage and fire rate, plus the shotgun's pellets and spread; and all of magic: max mana and regeneration (and how much Big Brain changes them), Wand/Staff potency, spell range, and every spell's mana cost, cooldown, damage, duration and other numbers. Type to search them, like the Q/E picker: names and section names (World, Economy, Weapons) by the start of a word, descriptions anywhere; Tab completes a name and Esc clears the search. Changes apply to everyone at once (everyone gets a message saying who changed what) and are saved with the world. In single player they're your world's settings.
 
 **Trust:** this is built for friends. Each browser moves its own player and the server believes it, checking only basic things such as reach and cooldowns. Don't run it on the open internet.
 
@@ -134,6 +134,9 @@ A full day lasts 10 minutes. Monsters only spawn **in the dark**: never during t
 - **Clerk** and **Mildew** (the Backrooms only): parts of the Backrooms are dark (rooms without a light), and these come out of them at any hour. The Clerk is a very tall, faceless office worker who walks slowly at you with its arms out and hits hard; the Mildew is a low patch of damp carpet that skitters fast.
 - **Knife Penguin**: lives where it's cold (taiga, snow and ice), waddles up to you holding a kitchen knife and uses it. It drops a Raw Penguin. Roasted, it heals, but doesn't let you flap: flight was never an option.
 
+- **Brainrot** (original creatures, with sing-song pseudo-Italian names, and they chant): the **Pomodorino Pugnolino**, a boxing tomato that rushes in with quick jabs; the **Lavatricio Giraffone**, a washing machine on giraffe legs, slow and tough, that kicks hard; and the **Ventilone Fenicotterone**, a one-legged flamingo with a desk fan for a head whose pecks barely hurt but knock you flying.
+- **Tung Tung Tung Sahur**: a wooden log with a wide stare and a big wooden bat. It only comes out in the last hours of the night (from 03:00 until dawn; a server setting), drumming *tung, tung, tung* as it comes to get you up for sahur, and burns away at sunrise.
+
 Zombies and skeletons burn in direct sunlight. Creatures that walk have to swim across water: they float chest-deep and go at half speed (except knife penguins, which are much faster in water than on land), so a moat slows them down.
 
 During the day, **cows** wander in herds on grass. Hit one and it runs (it takes a good ten punches). Hold a **Bucket** (3D Printer or CONSUME) in your left hand and right-click a cow to **milk** it: a glass of milk, and that cow has none left for a minute. Kill one and it drops 1–2 steaks or a liver, and usually a **glass of milk** or some **cheese**. Walk over the drops to pick them up, then eat them to heal. You can only eat when you're hurt, so food isn't wasted. Your food is saved along with the world.
@@ -155,18 +158,17 @@ During the day, **cows** wander in herds on grass. Hit one and it runs (it takes
 
 **Characters:** each Player can have up to 5 characters (a server setting), each with its own name, inventory, skills and saves. After signing in you play your last character straight away; **Switch character** on the main menu shows the list (Play, Delete, New character). The **character creator** sets the name, the **stats** (every one starts at 5 and you place 15 more points; any you don't place become attribute points) and the **look**: head (Normal, or the novelty heads Smug Shiba, Chiseled Hunk, Stone Head and Frog), skin (Fitzpatrick types I to VI), hairstyle and hair colour, two brows or a unibrow, and shirt and trouser colours, with a turning 3D preview. A character's stats and traits are its own for good.
 
-**Stats:** eight RPG-ish stats. Press **I** for your character sheet. **Every level-up gives you 3 attribute points** (a server setting): click the **+** next to a stat on the character sheet to add one. Points you add stay with you from life to life, on top of whatever you roll. 
+**Stats:** seven RPG-ish stats. Press **I** for your character sheet. **Every level-up gives you 3 attribute points** (a server setting): click the **+** next to a stat on the character sheet to add one. Points you add stay with you from life to life, on top of whatever you roll. 
 
 | Stat | Spoofing | What it does (per point above/below 10) |
 |---|---|---|
-| Strongth | Strength | ±4% melee damage |
-| Rascaliness | Dexterity | ±1.5% movement speed |
-| Smartness | Intelligence | ±5 max mana and ±0.3 mana a second (see Magic) |
-| Rizz | Charisma | the 3D Printer and CONSUME give you ±3% off (or on) |
-| Snackitude | Wisdom, kind of | ±5% healing from food |
-| Vibes | Constitution | pet allergies flare up 6% less (or more) often |
+| Mog | Strength | ±4% damage with melee weapons and bows |
+| Cracked | Dexterity | ±1.5% movement speed; above 10, a 1% chance per point (up to 40%) to dodge an attack from a mob, weapon or spell (never falls, lava or blasts) |
+| Big Brain | Intelligence | ±5 max mana and ±0.3 mana a second (see Magic) |
+| Rizz | Charisma | Fantasy Town shopkeepers give you ±3% off (or on), and quest rewards are ±3% bigger (or smaller). The 3D Printer and CONSUME don't care |
+| Built Different | Constitution | ±1 max health; above 10, a 2% chance per point (up to 40%) to shrug off a debuff (hostile spells: chill, blind, shrink, enlarge, polymorph, hallucinate; and food reactions: headaches and upset stomachs); debuffs that do land last 3% shorter (or longer) |
 | Tallness | Height | ±3% reach, and you look taller or shorter (2.5% a point). Over 10, each step under a low ceiling has a 2% chance per point over 10 of bonking your head (1 damage) |
-| Touch Grass | nothing | purely for show |
+| Touch Grass | Wisdom, kind of | no effect yet |
 
 **Traits:** every time you spawn (your first join and every respawn) you might be born **gluten intolerant** (25% chance) or **lactose intolerant** (30%), or both. **Falls hurt:** landing on something solid after dropping more than 3 blocks costs 1 health per block beyond 3 (the **Fall damage** server setting scales this, or turns it off). Water landings, ladders, flying, flapping and the grappling hook don't count. You might get **fall healing** (20%): those same drops *heal* you instead, 1 health per block past the first 3, with a pop-up saying "That was weird...". Or you might be **gravity resistant** (15%): you feel half as much gravity, so you jump about twice as high and fall slower, and you never take fall damage. A message tells you, the character sheet (I) lists them, and the Q/E picker warns you about food you can't eat.
 - **Gluten intolerant + bread:** no healing, and a **20-second headache**: the screen throbs with a red border.
@@ -206,7 +208,7 @@ During the day, **cows** wander in herds on grass. Hit one and it runs (it takes
 
 **Biomes:** the land is plains, forest, jungle, desert, taiga and swamp, with special zones here and there: the Concrete Jungle, the Abandoned City, Hell, the Backrooms, the **Neon City** (for now built like the Concrete Jungle; the cyberpunk city is coming) and the **Fantasy Town**. Biomes are big: crossing one can take a few minutes. (They used to be ten times smaller. Worlds made before that keep the old, smaller terrain wherever anyone had built (every chunk with player changes, plus one chunk around it), and the new land eases into it over about 32 blocks, so your builds still stand on the ground they were built on. Likewise the Ball Pit is gone from new land, but ball pits where anyone had built stay, and its Foam and Ball Pit Balls blocks are still in the game.)
 
-**The Fantasy Town:** a large town of cobbled streets lit by lamp posts (so monsters don't spawn in the middle of it), timber-and-plaster houses, gardens and covered wells. Every 120 blocks or so there's a **market square** with a fountain and five shops. Each shop has a counter with its sign painted on it; **right-click the counter** to see what's for sale. You pay in Zcash at the exchange rate of the moment (Rizz haggles here too), with no fee and no wait. Their goods are sold nowhere else: you can't print them or order them.
+**The Fantasy Town:** a large town of cobbled streets lit by lamp posts (so monsters don't spawn in the middle of it), timber-and-plaster houses, gardens and covered wells. Every 120 blocks or so there's a **market square** with a fountain and five shops. Each shop has a counter with its sign painted on it; **right-click the counter** to see what's for sale. You pay in Zcash at the exchange rate of the moment (Rizz haggles here, and only here), with no fee and no wait. Their goods are sold nowhere else: you can't print them or order them.
 
 | Shop | Sells |
 |---|---|
@@ -280,7 +282,7 @@ Ingredients: cut wild **wheat** (it gives wheat now, not bread), buy **yeast** a
 
 The Pottery Wheel, Kiln and Glazing Table come from the 3D Printer or CONSUME. Every throw, trim and glaze, and every piece fired, is a point in the **Pottery** skill (title: *Potter*). Clay costs, both firing times, the kiln load and the clay chances are Server settings (Pottery).
 
-**Magic:** there are fifteen spells, and **you start knowing none of them.** Buy a spell's **scroll** from the **Wizard** in the Fantasy Town and read it (click with it): that teaches you the spell for good (the scroll is used up). After that you cast it with mana as below; reading another scroll of a spell you already know casts it for free. **Scroll the mouse wheel** to pick one (the spell bar is bottom left), then click with an **empty hand**, a **Wand** or a **Staff** to cast it. Picking "No spell" makes empty hands punch and mine again. Spells cost **mana**, which refills by itself; your **Smartness** sets both how much mana you can hold (50 at average, ±5 per point) and how fast it refills (2 a second, ±0.3 per point). A Wand makes your magic **25% stronger** and a two-handed Staff **50% stronger** (damage and durations); both are printable or on CONSUME.
+**Magic:** there are fifteen spells, and **you start knowing none of them.** Buy a spell's **scroll** from the **Wizard** in the Fantasy Town and read it (click with it): that teaches you the spell for good (the scroll is used up). After that you cast it with mana as below; reading another scroll of a spell you already know casts it for free. **Scroll the mouse wheel** to pick one (the spell bar is bottom left), then click with an **empty hand**, a **Wand** or a **Staff** to cast it. Picking "No spell" makes empty hands punch and mine again. Spells cost **mana**, which refills by itself; your **Big Brain** sets both how much mana you can hold (50 at average, ±5 per point) and how fast it refills (2 a second, ±0.3 per point). A Wand makes your magic **25% stronger** and a two-handed Staff **50% stronger** (damage and durations); both are printable or on CONSUME.
 
 | Spell | Mana | What it does |
 |---|---|---|
@@ -347,7 +349,7 @@ In single player, the world seed, your block edits and your progress are saved i
 - `src/mobs.js`: mob AI, spawning, arrows, blast damage
 - `src/bestiary.js`: the Bestiary's entries (J)
 - `src/fireballs.js`: fireball projectiles (and magic missiles) and block-destroying explosions
-- `src/spells.js`: the spells, mana from Smartness, and Wand/Staff potency
+- `src/spells.js`: the spells, mana from Big Brain, and Wand/Staff potency
 - `src/drones.js`: CONSUME delivery drones
 - `src/items.js`: food, dishes, tools (dollar prices), loot, dropped items, and the hand inventory (search and Tab completion)
 - `src/market.js`: the wild ZEC/USD exchange rate and price conversion

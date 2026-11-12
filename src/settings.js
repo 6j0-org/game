@@ -94,10 +94,10 @@ tune('Weapons', {
 
 // Magic: mana, potency, and every spell's numbers (spells.js holds the defaults).
 const magic = (key, name, desc, min, max, step, unit = '') => tune('Magic', { [key]: [M[key], name, desc, x(min, max, step, unit)] });
-magic('manaBase', 'Max mana', 'Mana you can hold at average Smartness', 1, 500, 1);
-magic('manaPerPoint', 'Max mana per Smartness point', 'Added (or taken away) for each Smartness point above (or below) 10', 0, 50, 1);
-magic('regenBase', 'Mana regeneration', 'Mana per second at average Smartness', 0, 50, 0.1, '/s');
-magic('regenPerPoint', 'Mana regeneration per Smartness point', 'Added (or taken away) for each Smartness point above (or below) 10', 0, 5, 0.05, '/s');
+magic('manaBase', 'Max mana', 'Mana you can hold at average Big Brain', 1, 500, 1);
+magic('manaPerPoint', 'Max mana per Big Brain point', 'Added (or taken away) for each Big Brain point above (or below) 10', 0, 50, 1);
+magic('regenBase', 'Mana regeneration', 'Mana per second at average Big Brain', 0, 50, 0.1, '/s');
+magic('regenPerPoint', 'Mana regeneration per Big Brain point', 'Added (or taken away) for each Big Brain point above (or below) 10', 0, 5, 0.05, '/s');
 magic('wandPotency', 'Wand potency', 'Spell damage and durations when cast with a Wand', 0, 5, 0.05, '×');
 magic('staffPotency', 'Staff potency', 'Spell damage and durations when cast with a Staff', 0, 5, 0.05, '×');
 magic('runewandPotency', 'Rune Wand potency', 'Spell damage and durations when cast with a Rune Wand (from the town wizard)', 0, 5, 0.05, '×');
@@ -189,7 +189,7 @@ export function cleanSetting(key, value) {
  * that version that still has the old default gets the new one (game.js runs this once per world; saves keep
  * every value, so without this a new default would never reach an existing world).
  */
-export const SETTINGS_VERSION = 3;
+export const SETTINGS_VERSION = 4;
 const CHANGED_DEFAULTS = [
   [2, 'hp_cow', 10], // cows take ten punches now
   [2, 'rate_shortbow', 1.8], [2, 'rate_longbow', 1], // bows: drawing them takes the time now
@@ -197,9 +197,16 @@ const CHANGED_DEFAULTS = [
   [3, 'heal_steak', 6], [3, 'heal_liver', 10], [3, 'heal_bird', 2], [3, 'heal_penguin', 6],
   [3, 'heal_trout', 4], [3, 'heal_salmon', 6], [3, 'heal_catfish', 5], [3, 'heal_perch', 3], [3, 'heal_koi', 12],
 ];
-/** Upgrades saved settings from `version` to SETTINGS_VERSION (see CHANGED_DEFAULTS). */
+/** Settings that were renamed: [settings version that renamed them, old key, new key]; a saved value moves across. */
+const RENAMED_SETTINGS = [
+  [4, 'statStrongth', 'statMog'], [4, 'statRascaliness', 'statCracked'], // the stats' new names (stats.js)
+];
+/** Upgrades saved settings from `version` to SETTINGS_VERSION (see CHANGED_DEFAULTS and RENAMED_SETTINGS). */
 export function migrateSettings(saved, version) {
   if (!saved) return saved;
+  for (const [v, from, to] of RENAMED_SETTINGS) {
+    if (version < v && from in saved) { if (!(to in saved)) saved[to] = saved[from]; delete saved[from]; }
+  }
   for (const [v, key, old] of CHANGED_DEFAULTS) if (version < v && saved[key] === old) delete saved[key];
   return saved;
 }

@@ -5,6 +5,8 @@
 //   seedoil     golden oil blob that hops at you and splits in two when killed (size 3 -> 2 -> 1)
 //   cow         passive; wanders in daytime herds, runs when hit, drops steak or liver
 //   cat, dog    friendly pets that tag along after you; their allergy aura makes you cough and sneeze
+//   pomodorino, lavatricio, ventilone   brainrot: absurd hybrids with sing-song pseudo-Italian names (night, anywhere)
+//   sahur       Tung Tung Tung Sahur: a wooden log with a bat; only comes out before dawn (from T.sahurStart)
 
 import { T, tune, bindTunable } from './tuning.js';
 import { Body } from './body.js';
@@ -12,7 +14,6 @@ import { CH } from './world.js';
 import { AIR, GRASS, LEAFY, WATER, SOLID, FLUID, LAVA, LAVA_LAMP, SNOW_GRASS, ICE } from './blocks.js';
 import { rollCowLoot, rollSeedOilLoot, rollCoinLoot } from './items.js';
 import { sizeScale, sizeSpeed, magic } from './spells.js';
-import { statEffects } from './stats.js';
 
 // Server settings (tuning.js): read the live values as T.key.
 tune('Monsters & animals', {
@@ -36,6 +37,7 @@ tune('Monsters & animals', {
   floatDepth: [0.7, 'Mob float depth', 'How much of a swimming mob is under water', { max: 1, step: 0.05 }],
   mobSwimSpeed: [0.5, 'Mob swim speed', 'Swimming speed compared with walking', { unit: '×' }],
   arrowDamage: [3, 'Arrow damage', 'Damage per skeleton arrow'],
+  sahurStart: [3, 'Sahur hour', 'Tung Tung Tung Sahur only comes out from this hour of the night until dawn', { unit: ':00', min: 0, max: 6, step: 0.5 }],
 });
 
 // `melee` mobs walk straight at you and hit for `damage`. `weight` is the natural night-spawn share.
@@ -47,6 +49,13 @@ export const MOB_TYPES = {
   // The Backrooms: they come out of the dark rooms, day or night (Mobs._trySpawnBackrooms).
   clerk: { tag: 'K', halfW: 0.3, height: 2.2, hp: 26, speed: 1.9, burns: false, melee: true, damage: 5, weight: 0.6, habitat: 'backrooms' },
   mildew: { tag: 'M', halfW: 0.4, height: 0.45, hp: 10, speed: 4.4, burns: false, melee: true, damage: 2, weight: 0.4, habitat: 'backrooms' },
+  // Brainrot (original designs): absurd hybrids with sing-song pseudo-Italian names. Night, anywhere.
+  // `knock` is how hard a hit shoves you (default 6).
+  pomodorino: { tag: 'T', halfW: 0.32, height: 0.95, hp: 12, speed: 3.6, burns: false, melee: true, damage: 2, weight: 0.06 }, // a boxing tomato
+  lavatricio: { tag: 'L', halfW: 0.45, height: 2.6, hp: 40, speed: 1.7, burns: false, melee: true, damage: 6, knock: 11, weight: 0.05 }, // a washing machine on giraffe legs
+  ventilone: { tag: 'V', halfW: 0.3, height: 1.7, hp: 14, speed: 3, burns: false, melee: true, damage: 1, knock: 18, weight: 0.06 }, // a flamingo with a desk fan for a head
+  // Tung Tung Tung Sahur: a log with a face and a bat. `sahur`: only spawns from T.sahurStart until dawn; wood burns at sunrise.
+  sahur: { tag: 'H', halfW: 0.3, height: 2, hp: 30, speed: 2.7, burns: true, melee: true, damage: 4, knock: 9, weight: 0.35, sahur: true },
   // Sized: box is 0.5*size wide and 0.4*size tall, hp and contact damage scale with size.
   seedoil: { tag: 'O', sized: true, hp: 6, speed: 3.2, burns: false, weight: 0.12 },
   cow: { tag: 'C', passive: true, halfW: 0.45, height: 1.4, hp: 65, // (at least ten punches, however strong you rolled)
@@ -187,7 +196,7 @@ export class Mobs {
       if (player.dead) continue;
       const c = player.center;
       const d = Math.hypot(c.x - x, c.y - y, c.z - z);
-      if (d < reach) player.damage(Math.round((1 - d / reach) * 15 * mult), x, z, 14 * (1 - d / reach), source);
+      if (d < reach) player.damage(Math.round((1 - d / reach) * 15 * mult), x, z, 14 * (1 - d / reach), source && { ...source, blast: true }); // (blasts can't be dodged)
     }
   }
 
@@ -327,7 +336,7 @@ export class Mobs {
         wx = ux * t.speed;
         wz = uz * t.speed;
         if (dist < 0.9 + t.halfW && Math.abs(dy) < 1.6 && m.attackCd <= 0) {
-          player.damage(Math.max(1, Math.round(t.damage * m.scale)), m.pos.x, m.pos.z, 6 * m.scale, { cause: 'mob', mob: m.type });
+          player.damage(Math.max(1, Math.round(t.damage * m.scale)), m.pos.x, m.pos.z, (t.knock ?? 6) * m.scale, { cause: 'mob', mob: m.type });
           m.attackCd = 1;
         }
       } else if (m.type === 'skeleton') {
@@ -529,7 +538,7 @@ export class Mobs {
       this.allergyT.set(player, left);
       return;
     }
-    this.allergyT.set(player, (1.4 + this.rand() * 1.4) * statEffects(player.stats).allergy);
+    this.allergyT.set(player, 1.4 + this.rand() * 1.4);
     const sneeze = this.rand() < 0.4;
     const damage = sneeze ? T.sneezeDamage : T.coughDamage;
     player.damage(damage, player.pos.x, player.pos.z, 0, { cause: 'allergy' });
@@ -669,6 +678,13 @@ export class Mobs {
     return made;
   }
 
+  /** Before dawn: from T.sahurStart (an hour of the night) until sunrise. `time` is the game's (set every tick). */
+  _sahur() {
+    if (!Number.isFinite(this.time)) return false;
+    const hour = (this.time * 24 + 6) % 24; // (time 0 is sunrise, 06:00)
+    return hour >= T.sahurStart && hour < 6;
+  }
+
   _trySpawn(player) {
     const [x, z] = this._ringPoint(player);
     const spot = this._surface(x, z);
@@ -679,7 +695,7 @@ export class Mobs {
     // Only creatures that belong here: penguins where it's cold (and three times as many there).
     const cold = this._cold(x, z, spot.ground);
     if (this.world.biomeAt(x, z).biome === 'backrooms') return this._trySpawnBackrooms(player, [x, z]); // (not on the roof: inside, in the dark)
-    const choices = Object.entries(MOB_TYPES).filter(([, def]) => def.weight > 0 && def.habitat !== 'backrooms' && (def.habitat !== 'cold' || cold))
+    const choices = Object.entries(MOB_TYPES).filter(([, def]) => def.weight > 0 && def.habitat !== 'backrooms' && (def.habitat !== 'cold' || cold) && (!def.sahur || this._sahur()))
       .map(([name, def]) => [name, def.weight * (def.habitat === 'cold' ? 3 : 1)]);
     const total = choices.reduce((a, [, w]) => a + w, 0);
     let pick = this.rand() * Math.max(total, 1);
@@ -798,11 +814,13 @@ tune('Monsters & animals', {
   flockChance: [0.5, 'Flock chance', 'Chance a flock of birds comes each attempt', { max: 1, step: 0.05 }],
 });
 const MOB_NAMES = { zombie: 'Zombie', skeleton: 'Skeleton', penguin: 'Knife Penguin', clerk: 'Clerk', mildew: 'Mildew',
+  sahur: 'Tung Tung Tung Sahur', pomodorino: 'Pomodorino Pugnolino', lavatricio: 'Lavatricio Giraffone', ventilone: 'Ventilone Fenicotterone',
   seedoil: 'Seed Oil', cow: 'Cow', cat: 'Cat', dog: 'Dog', bird: 'Bluebird', munia: 'Munia', finch: 'Finch', seagull: 'Seagull', nutmunch: 'Nutmunch' };
 for (const [k, t] of Object.entries(MOB_TYPES)) {
   const name = MOB_NAMES[k] || k;
   bindTunable(t, 'hp', 'Monsters & animals', `hp_${k}`, `${name} health`, t.sized ? 'Health per size step' : 'Health');
   bindTunable(t, 'speed', 'Monsters & animals', `speed_${k}`, `${name} speed`, 'Blocks per second');
   if ('damage' in t) bindTunable(t, 'damage', 'Monsters & animals', `damage_${k}`, `${name} damage`, 'Damage per hit');
+  if ('knock' in t) bindTunable(t, 'knock', 'Monsters & animals', `knock_${k}`, `${name} knockback`, 'How hard a hit shoves you');
   if (!t.passive) bindTunable(t, 'weight', 'Monsters & animals', `weight_${k}`, `${name} spawn weight`, 'How often it spawns compared with other monsters (0: never)', { max: 2, step: 0.01 });
 }

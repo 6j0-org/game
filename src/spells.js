@@ -1,6 +1,6 @@
 // Magic: everyone knows every spell. Pick one with the scroll wheel, then click with an empty hand,
 // a Wand or a Staff to cast it; that costs mana, which refills over time. Mana and its refill rate
-// come from your Smartness. The game owns mana and does the casting (game.js `_cast`). No Three.js, no DOM.
+// come from your Big Brain. The game owns mana and does the casting (game.js `_cast`). No Three.js, no DOM.
 //
 // Every number here is a default: Server settings (settings.js, group "Magic") can change any of them,
 // so read them through the helpers below with the current settings, never directly.
@@ -33,7 +33,7 @@ export const isFocus = (kind) => kind in FOCUS_KEYS;
 
 /** Defaults for every magic setting (see settings.js for names, ranges and units). */
 export const MAGIC_DEFAULTS = {
-  manaBase: 50, manaPerPoint: 5, // max mana: base ± per Smartness point away from 10
+  manaBase: 50, manaPerPoint: 5, // max mana: base ± per Big Brain point away from 10
   regenBase: 2, regenPerPoint: 0.3, // mana per second, likewise
   wandPotency: 1.25, staffPotency: 1.5, runewandPotency: 1.6, archstaffPotency: 2.2, // the last two: the town wizard's
   scrollPotency: 1, // a spell read from a scroll (free: no mana, and the scroll is used up)
@@ -76,7 +76,7 @@ export const sizeScale = (spell, settings = T) => (SIZE_SPELLS[spell] ? magic(se
 /** Its speed multiplier. */
 export const sizeSpeed = (spell, settings = T) => (spell === 'enlarge' ? magic(settings, 'enlargeSpeed') / 100 : sizeScale(spell, settings));
 
-const smart = (stats) => (Number.isFinite(stats?.smartness) ? stats.smartness : 10) - 10;
+const smart = (stats) => (Number.isFinite(stats?.bigBrain) ? stats.bigBrain : 10) - 10; // Big Brain
 /** Most mana you can hold. */
 export const maxMana = (stats, settings) => Math.max(1, Math.round(magic(settings, 'manaBase') + smart(stats) * magic(settings, 'manaPerPoint')));
 /** Mana per second. */

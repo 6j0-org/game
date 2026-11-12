@@ -921,8 +921,10 @@ const MOB_VOICES = {
   bird: ['tweet', 5, 14], munia: ['tweet', 4, 10], finch: ['tweet', 4, 12], nutmunch: ['tweet', 6, 16], seagull: ['caw', 5, 12],
   penguin: ['honk', 4, 10],
   clerk: ['hum', 5, 11], mildew: ['squelch', 3, 8],
+  sahur: ['tung', 3, 7],
+  pomodorino: ['brainrot', 4, 9], lavatricio: ['brainrot', 5, 11], ventilone: ['brainrot', 4, 10],
 };
-const MOB_VOICE_PITCH = { cow: 0.6, cat: 1.6, dog: 1.2, seedoil: 1.3, munia: 1.25, finch: 1.1, nutmunch: 0.7, penguin: 0.9 };
+const MOB_VOICE_PITCH = { cow: 0.6, cat: 1.6, dog: 1.2, seedoil: 1.3, munia: 1.25, finch: 1.1, nutmunch: 0.7, penguin: 0.9, pomodorino: 1.35, lavatricio: 0.7, ventilone: 1 };
 function mobVoices(dt) {
   for (const m of remote.mobs.values()) {
     const v = MOB_VOICES[m.type];
@@ -1327,12 +1329,12 @@ let bestiaryOpen = false;
 let vaultAt = null; // the Cold Wallet block you opened
 let printJob = null;
 // The printer's catalogue, as a tile grid like the hand picker (see tileshop.js).
-const rizzPrice = (usdPrice) => Math.round(usdPrice * statEffects(player.stats).price * 100) / 100; // Rizz haggles
+const rizzPrice = (usdPrice) => Math.round(usdPrice * statEffects(player.stats).price * 100) / 100; // Rizz haggles (shopkeepers only)
 const printerShop = new TileShop({
   iconFor: (kind) => iconFor(kind.startsWith('ammo:') ? 'ammo' : kind),
   action: 'Print',
   live: (kind) => {
-    const price = rizzPrice(printUsd(kind));
+    const price = printUsd(kind); // (the printer doesn't care about Rizz)
     const zec = zecFor(price, rate);
     const id = blockIdOf(kind);
     return {
@@ -1892,7 +1894,8 @@ const npcButtons = document.getElementById('npc-buttons');
 let npcOpen = false;
 const ROLE_NAMES = { blacksmith: 'Blacksmith', healer: 'Healer', tavern: 'Innkeeper', fletcher: 'Fletcher', wizard: 'Wizard', villager: 'Villager' };
 /** "$12 (about 0.52 ZEC right now)". */
-const rewardText = (q) => `${usd(q.usd)} (about ${zecFor(q.usd, rate).toFixed(2)} ZEC right now)`;
+const rewardUsd = (q) => Math.round(q.usd * statEffects(player.stats).reward * 100) / 100; // Rizz: bigger rewards (game.js does the same)
+const rewardText = (q) => `${usd(rewardUsd(q))} (about ${zecFor(rewardUsd(q), rate).toFixed(2)} ZEC right now)`;
 /** One quest as a box: what it wants, how far along you are, and what it pays. */
 function questBox(q, extra = null) {
   const box = el('div', 'quest-box');
@@ -1956,7 +1959,7 @@ let questsKey = '';
 function renderQuests() {
   const qs = player.quests || { active: [], done: 0 };
   // Only rebuild (and replace the buttons) when something you'd see has changed.
-  const key = JSON.stringify([qs.active.map((q) => [q.id, questProgress(q, player).have, q.found, q.usd]), qs.done, Math.round(rate * 20)]);
+  const key = JSON.stringify([qs.active.map((q) => [q.id, questProgress(q, player).have, q.found, rewardUsd(q)]), qs.done, Math.round(rate * 20)]);
   if (key === questsKey) return;
   questsKey = key;
   document.getElementById('quests-done').textContent = `${qs.active.length} / ${settings.maxQuests} on the go · ${qs.done} done`;
@@ -2570,7 +2573,7 @@ function consumeShop() {
     action: 'Order',
     live: (kind) => {
       const offer = shopOffer(kind);
-      const price = Math.round(rizzPrice(offer.usd) * (1 + settings.deliveryFee / 100) * 100) / 100;
+      const price = Math.round(offer.usd * (1 + settings.deliveryFee / 100) * 100) / 100; // (no Rizz on CONSUME)
       const zec = zecFor(price, rate);
       return {
         price: usd(price),
@@ -2764,7 +2767,7 @@ function renderSheet() {
     const fx = effectText(k, player.stats);
     const about = el('div', 'stat-about');
     about.append(el('span', `verdict v${verdict(v).toLowerCase()}`, verdict(v)), ` ${def.desc}`);
-    if (def.effect) about.append(el('small', '', `${fx || '±0%'} ${def.effect}`));
+    about.append(el('small', '', fx));
     row.append(name, value, plus, bar, about);
     stats.append(row);
   }

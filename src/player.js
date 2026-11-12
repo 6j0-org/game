@@ -58,6 +58,8 @@ export class Player extends Body {
     this.invuln = 0;
     this.sinceHurt = 99;
     this.onHurt = null; // callback(amount)
+    this.onDodge = null; // callback(source): Cracked dodged an attack
+    this.rand = Math.random;
     this.food = Object.fromEntries(Object.keys(FOOD).map((k) => [k, 0]));
     this.dishes = Object.fromEntries(Object.keys(DISHES).map((k) => [k, 0])); // dirty, waiting to be washed
     this.spells = []; // the spells you know (learned by reading their scrolls: spells.js)
@@ -171,12 +173,20 @@ export class Player extends Body {
     this.skills[kind] = (this.skills[kind] || 0) + n;
     const before = this.level;
     this.level = levelFor(totalPoints(this.skills));
-    if (this.level > before) {
-      const maxHp = maxHpFor(this.level);
-      this.hp = Math.min(maxHp, this.hp + Math.max(0, maxHp - this.maxHp));
-      this.maxHp = maxHp;
-    }
+    if (this.level > before) this.refreshMaxHp();
     return this.level - before;
+  }
+
+  /** Max health from your level and Built Different. */
+  maxHpNow() {
+    return Math.max(1, maxHpFor(this.level) + statEffects(this.stats).hp);
+  }
+
+  /** Recomputes max health (levelling up, a point in Built Different); a rise heals you by as much. */
+  refreshMaxHp() {
+    const maxHp = this.maxHpNow();
+    this.hp = Math.min(maxHp, this.hp + Math.max(0, maxHp - this.maxHp));
+    this.maxHp = maxHp;
   }
 
   /** True if there's water (or a Sink) touching or right next to the player. */
@@ -238,9 +248,9 @@ export class Player extends Body {
     return CURES.some((k) => this.effects[k] > 0);
   }
 
-  /** How much a food heals you, with your Snackitude. */
+  /** How much a food heals you. */
   healFor(kind) {
-    return FOOD[kind].heal > 0 ? Math.max(1, Math.round(FOOD[kind].heal * statEffects(this.stats).heal)) : 0;
+    return FOOD[kind].heal > 0 ? Math.max(1, Math.round(FOOD[kind].heal)) : 0;
   }
 
   /** The armor you're wearing's definition, or null. */
@@ -290,6 +300,12 @@ export class Player extends Body {
    */
   damage(amount, fromX, fromZ, knock = 7, source = null) {
     if (this.dead || this.invuln > 0 || amount <= 0 || this.buildy) return false; // Buildy Bois are invincible
+    // Cracked: a chance to dodge an attack (mobs, weapons, spells), never falls, lava, blasts and the like.
+    if ((source?.cause === 'mob' || source?.cause === 'player') && !source.blast && this.rand() < statEffects(this.stats).dodge) {
+      this.invuln = T.invulnerable;
+      this.onDodge?.(source);
+      return false;
+    }
     if (this.effects.stoneskin > 0) amount = Math.max(1, Math.round(amount * (1 - this.armor))); // stoneskin
     if (this.armorWorn) amount = Math.max(1, Math.round(amount * (1 - Math.min(100, this.armorWorn.armor) / 100))); // armor you're wearing
     this.hp = Math.max(0, this.hp - amount);

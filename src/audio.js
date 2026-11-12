@@ -364,6 +364,30 @@ const SOUNDS = {
     for (let i = 0; i < 3; i++) k.noise(o, t + i * 0.07, { dur: 0.06, peak: 0.18, type: 'lowpass', f0: 900 * p, f1: 300, attack: 0.005 });
     return 0.25;
   },
+  tung: (k, o, t, { p }) => { // Tung Tung Tung Sahur: three hollow knocks of a wooden bat, then a low "sa-huuur"
+    for (let i = 0; i < 3; i++) {
+      const at = t + i * 0.22;
+      k.tone(o, at, { type: 'triangle', f0: 520 * p, f1: 380 * p, dur: 0.09, peak: 0.16 }); // the knock
+      k.tone(o, at, { f0: 180 * p, f1: 120 * p, dur: 0.12, peak: 0.2 }); // ...and the hollow log
+      k.crunch(o, at, 'wood', 0.05, 0.12, 0.6);
+    }
+    k.tone(o, t + 0.8, { type: 'sawtooth', f0: 150 * p, dur: 0.16, peak: 0.04, attack: 0.02 }); // sa-
+    k.tone(o, t + 0.98, { type: 'sawtooth', f0: 120 * p, f1: 105 * p, dur: 0.45, peak: 0.04, attack: 0.03, vibrato: 4, vibratoRate: 5 }); // -huuur
+    return 1.5;
+  },
+  brainrot: (k, o, t, { p }) => { // the brainrot mobs: a bouncy sing-song "tra-la-le-ro, tra-la-la"
+    const tunes = [[0, 4, 7, 4, -1, 0, 4, 0], [7, 5, 4, 2, -1, 4, 2, 0], [0, 0, 7, 7, -1, 9, 7, 4]];
+    const tune = tunes[Math.floor(Math.random() * tunes.length)];
+    let at = t;
+    for (const n of tune) {
+      if (n < 0) { at += 0.12; continue; } // a breath between the two halves
+      const f = 330 * p * 2 ** (n / 12);
+      k.tone(o, at, { type: 'triangle', f0: f * 1.03, f1: f, dur: 0.11, peak: 0.07, attack: 0.01 });
+      k.tone(o, at, { type: 'square', f0: f / 2, dur: 0.09, peak: 0.015, attack: 0.01 }); // a nasal edge
+      at += 0.13;
+    }
+    return at - t;
+  },
   rattle: (k, o, t) => {
     for (let i = 0; i < 6; i++) k.noise(o, t + i * 0.05 + rnd(0, 0.02), { dur: 0.03, peak: 0.18, type: 'bandpass', f0: rnd(2000, 3200), Q: 4 });
     return 0.35;

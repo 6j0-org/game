@@ -265,6 +265,105 @@ function buildPenguin(mat) {
   return { root, legs, arms: [flipL, flipR], body, waddle: true };
 }
 
+// Brainrot (original designs): absurd hybrids. `spin` parts whirl (a washing machine's drum, a fan's blades).
+const POMO = { red: 0xd8322a, shine: 0xf06a50, leaf: 0x3a8a2a, stem: 0x2a5a1a, glove: 0x2a5ad8, cuff: 0xf2f2ee, eye: 0xf8f8f0, pupil: 0x111111, brow: 0x5a1010 };
+function buildPomodorino(mat) {
+  const root = new THREE.Group();
+  const leg = (x) => part(mat, [[0.07, 0.24, 0.07, POMO.leaf, 0, -0.12, 0], [0.12, 0.05, 0.16, POMO.stem, 0, -0.23, -0.03]], x, 0.24, 0);
+  const legs = [leg(-0.12), leg(0.12)];
+  const body = part(mat, [
+    [0.62, 0.52, 0.6, POMO.red, 0, 0.52, 0], // the tomato
+    [0.68, 0.36, 0.5, POMO.red, 0, 0.52, 0], // (rounder at the middle)
+    [0.5, 0.36, 0.66, POMO.red, 0, 0.52, 0],
+    [0.12, 0.1, 0.02, POMO.shine, 0.16, 0.66, -0.335], // a glint
+    [0.32, 0.04, 0.08, POMO.leaf, 0, 0.8, 0], [0.08, 0.04, 0.32, POMO.leaf, 0, 0.8, 0], // the leafy hat
+    [0.05, 0.12, 0.05, POMO.stem, 0, 0.87, 0],
+    [0.1, 0.1, 0.02, POMO.eye, -0.12, 0.6, -0.335], [0.1, 0.1, 0.02, POMO.eye, 0.12, 0.6, -0.335],
+    [0.05, 0.05, 0.02, POMO.pupil, -0.11, 0.59, -0.345], [0.05, 0.05, 0.02, POMO.pupil, 0.11, 0.59, -0.345],
+    [0.12, 0.03, 0.02, POMO.brow, -0.12, 0.68, -0.34], [0.12, 0.03, 0.02, POMO.brow, 0.12, 0.68, -0.34], // cross
+    [0.16, 0.04, 0.02, POMO.brow, 0, 0.44, -0.335], // a grimace
+  ]);
+  const arm = (x) => part(mat, [[0.06, 0.2, 0.06, POMO.leaf, 0, -0.1, 0], [0.07, 0.04, 0.07, POMO.cuff, 0, -0.2, 0], [0.15, 0.15, 0.15, POMO.glove, 0, -0.29, 0]], x, 0.55, 0);
+  const arms = [arm(-0.37), arm(0.37)];
+  root.add(...legs, body, ...arms);
+  return { root, legs, arms, body, punch: true };
+}
+
+// Tung Tung Tung Sahur: a standing log with a wide stare, stick limbs and a big wooden bat it drums with.
+const SAHUR = { bark: 0x7a4e2a, wood: 0xc8945a, rings: 0xa87440, end: 0xdcb07a, stick: 0x6a4224, eye: 0xf8f8f0, pupil: 0x111111, mouth: 0x4a2a14, bat: 0xd8b070, grip: 0x8a5a2a };
+function buildSahur(mat) {
+  const root = new THREE.Group();
+  const leg = (x) => part(mat, [[0.08, 0.6, 0.08, SAHUR.stick, 0, -0.3, 0], [0.12, 0.05, 0.18, SAHUR.stick, 0, -0.58, -0.04]], x, 0.6, 0);
+  const legs = [leg(-0.12), leg(0.12)];
+  const body = part(mat, [
+    [0.5, 1.3, 0.44, SAHUR.bark, 0, 1.25, 0], // the log
+    [0.42, 1.2, 0.02, SAHUR.wood, 0, 1.25, -0.225], // planed smooth at the front
+    [0.46, 0.02, 0.4, SAHUR.end, 0, 1.91, 0], [0.3, 0.02, 0.26, SAHUR.rings, 0, 1.915, 0], [0.12, 0.02, 0.1, SAHUR.end, 0, 1.92, 0], // end grain
+    [0.14, 0.16, 0.02, SAHUR.eye, -0.1, 1.62, -0.235], [0.14, 0.16, 0.02, SAHUR.eye, 0.1, 1.62, -0.235], // a wide stare
+    [0.04, 0.04, 0.02, SAHUR.pupil, -0.1, 1.62, -0.245], [0.04, 0.04, 0.02, SAHUR.pupil, 0.1, 1.62, -0.245],
+    [0.16, 0.03, 0.02, SAHUR.mouth, 0, 1.44, -0.235], [0.03, 0.03, 0.02, SAHUR.mouth, -0.09, 1.46, -0.235], [0.03, 0.03, 0.02, SAHUR.mouth, 0.09, 1.46, -0.235], // a thin smile
+    [0.1, 0.1, 0.02, SAHUR.rings, 0.16, 1.05, -0.232], [0.06, 0.06, 0.02, SAHUR.bark, 0.16, 1.05, -0.24], // a knot
+  ]);
+  const arm = (x) => part(mat, [[0.07, 0.55, 0.07, SAHUR.stick, 0, -0.27, 0]], x, 1.5, 0);
+  const armL = arm(-0.3);
+  const armR = arm(0.3);
+  // The bat, gripped at the end of the right arm and pointing on down past the hand.
+  armR.add(part(mat, [[0.07, 0.2, 0.07, SAHUR.grip, 0, -0.08, 0], [0.1, 0.04, 0.1, SAHUR.grip, 0, 0.04, 0], [0.11, 0.6, 0.11, SAHUR.bat, 0, -0.45, 0], [0.13, 0.14, 0.13, SAHUR.bat, 0, -0.78, 0]], 0, -0.52, 0));
+  root.add(...legs, body, armL, armR);
+  return { root, legs, arms: [armL, armR], body, drum: true };
+}
+
+const LAVA = { white: 0xeeeee8, panel: 0x9aa0a8, knob: 0x3a3e46, ring: 0x6a6e76, glass: 0x5a8ab8, sock: 0xd83a3a, shirt: 0xf2c230, hide: 0xd8a860, spot: 0x8a5a2a, hoof: 0x3a2a1e, horn: 0x6a4a2a, eye: 0x111111 };
+function buildLavatricio(mat) {
+  const root = new THREE.Group();
+  const leg = (x, z) => part(mat, [
+    [0.12, 1, 0.12, LAVA.hide, 0, -0.5, 0],
+    [0.13, 0.12, 0.13, LAVA.spot, 0, -0.3, 0], [0.13, 0.1, 0.13, LAVA.spot, 0, -0.68, 0],
+    [0.15, 0.08, 0.15, LAVA.hoof, 0, -0.96, 0],
+  ], x, 1, z);
+  const legs = [leg(-0.3, -0.28), leg(0.3, -0.28), leg(0.3, 0.28), leg(-0.3, 0.28)]; // (diagonal pairs step together)
+  const body = part(mat, [
+    [0.86, 0.8, 0.8, LAVA.white, 0, 1.4, 0], // the washing machine
+    [0.86, 0.12, 0.02, LAVA.panel, 0, 1.74, -0.41], // control panel
+    [0.08, 0.08, 0.03, LAVA.knob, 0.28, 1.74, -0.42], [0.05, 0.05, 0.03, LAVA.knob, 0.14, 1.74, -0.42],
+    [0.6, 0.6, 0.02, LAVA.ring, 0, 1.34, -0.41], // the door's rim
+  ]);
+  const spin = part(mat, [
+    [0.46, 0.46, 0.02, LAVA.glass, 0, 0, 0],
+    [0.14, 0.1, 0.02, LAVA.sock, 0.1, 0.1, -0.012], [0.12, 0.14, 0.02, LAVA.shirt, -0.1, -0.08, -0.012], // laundry, going round
+  ], 0, 1.34, -0.42);
+  const neck = part(mat, [
+    [0.16, 0.7, 0.16, LAVA.hide, 0, 0.35, 0],
+    [0.17, 0.1, 0.17, LAVA.spot, 0, 0.2, 0], [0.17, 0.12, 0.17, LAVA.spot, 0, 0.5, 0],
+    [0.22, 0.2, 0.42, LAVA.hide, 0, 0.75, -0.1], // the head, on top
+    [0.04, 0.1, 0.04, LAVA.horn, -0.06, 0.9, 0], [0.04, 0.1, 0.04, LAVA.horn, 0.06, 0.9, 0],
+    [0.04, 0.04, 0.02, LAVA.eye, -0.1, 0.8, -0.2], [0.04, 0.04, 0.02, LAVA.eye, 0.1, 0.8, -0.2],
+  ], 0, 1.72, -0.24);
+  root.add(...legs, body, spin, neck);
+  return { root, legs, arms: [], body, spin, spinRate: 9, neck };
+}
+
+const VENT = { pink: 0xf08aa8, deep: 0xd8607e, leg: 0xe07a96, beak: 0x2a2a2a, metal: 0xc8ccd2, motor: 0x8a8e96, blade: 0x9ad0e8, hub: 0x3a3e46 };
+function buildVentilone(mat) {
+  const root = new THREE.Group();
+  const body = part(mat, [
+    [0.05, 0.8, 0.05, VENT.leg, 0, 0.4, 0], // the one leg it stands on
+    [0.16, 0.03, 0.2, VENT.leg, 0, 0.015, -0.04],
+    [0.05, 0.3, 0.05, VENT.leg, 0.1, 0.72, 0.06], [0.05, 0.05, 0.22, VENT.leg, 0.1, 0.6, -0.02], // the other, tucked up
+    [0.38, 0.32, 0.6, VENT.pink, 0, 0.98, 0.04], // body
+    [0.04, 0.24, 0.44, VENT.deep, -0.2, 1, 0.08], [0.04, 0.24, 0.44, VENT.deep, 0.2, 1, 0.08], // wings
+    [0.2, 0.12, 0.2, VENT.deep, 0, 1.04, 0.38], // tail
+    [0.08, 0.4, 0.08, VENT.pink, 0, 1.3, -0.2], [0.08, 0.08, 0.16, VENT.pink, 0, 1.46, -0.16], // neck
+    [0.06, 0.14, 0.06, VENT.metal, 0, 1.52, -0.2], // ...into the fan's stand
+    [0.16, 0.16, 0.2, VENT.motor, 0, 1.62, -0.18], // motor
+    [0.5, 0.03, 0.02, VENT.metal, 0, 1.87, -0.3], [0.5, 0.03, 0.02, VENT.metal, 0, 1.37, -0.3], // the cage
+    [0.03, 0.5, 0.02, VENT.metal, -0.25, 1.62, -0.3], [0.03, 0.5, 0.02, VENT.metal, 0.25, 1.62, -0.3],
+  ]);
+  const spin = part(mat, [[0.42, 0.08, 0.02, VENT.blade, 0, 0, 0], [0.08, 0.42, 0.02, VENT.blade, 0, 0, 0], [0.08, 0.08, 0.04, VENT.hub, 0, 0, -0.01]], 0, 1.62, -0.29);
+  root.add(body, spin);
+  return { root, legs: [], arms: [], body, spin, spinRate: 30, hop: true };
+}
+
 function buildCat(mat) {
   const root = new THREE.Group();
   const legs = petLegs(mat, CAT.fur, 0.09, 0.22, 0.09, 0.2);
@@ -510,6 +609,7 @@ const BUILDERS = {
   penguin: buildPenguin,
   zombie: buildZombie, skeleton: buildSkeleton, clerk: buildClerk, mildew: buildMildew,
   seedoil: buildSeedOil,
+  sahur: buildSahur, pomodorino: buildPomodorino, lavatricio: buildLavatricio, ventilone: buildVentilone,
 };
 const REACHING = new Set(['zombie', 'clerk']); // arms held out in front
 
@@ -665,6 +765,20 @@ export class MobModels {
         const t = performance.now() / 1000 + m.id;
         model.tail.rotation.y = m.type === 'dog' ? Math.sin(t * 16) * 0.6 : Math.sin(t * 2) * 0.35;
       }
+      if (model.spin) model.spin.rotation.z = (performance.now() / 1000) * model.spinRate + m.id; // drum, blades
+      if (model.punch) { // a boxer's guard, with quick jabs
+        const j = performance.now() / 120 + m.id;
+        model.arms[0].rotation.x = 1.1 + Math.max(0, Math.sin(j)) * 0.5;
+        model.arms[1].rotation.x = 1.1 + Math.max(0, -Math.sin(j)) * 0.5;
+      }
+      if (model.drum) { // tung, tung, tung... (three quick strikes, then a breath)
+        const c = (performance.now() / 1000 + m.id * 0.37) % 1.4;
+        const k = c < 0.66 ? Math.abs(Math.sin((c / 0.22) * Math.PI)) : 0;
+        model.arms[1].rotation.x = 0.5 + k * 1.4;
+        model.arms[0].rotation.x = -swing * 0.6;
+      }
+      if (model.hop) model.root.position.y += Math.abs(Math.sin(m.walkPhase)) * 0.18 * m.walkAmount; // on one leg
+      if (model.neck) model.neck.rotation.x = Math.sin(m.walkPhase * 0.5) * 0.12 * m.walkAmount; // the neck sways
       if (model.waddle) {
         // Rock side to side; the knife arm jabs when it's close enough to use it.
         model.body.rotation.z = Math.sin(m.walkPhase) * 0.12 * m.walkAmount;

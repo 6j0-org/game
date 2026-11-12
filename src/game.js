@@ -33,7 +33,7 @@ import { AIR, WATER, ICE, FLUID, LAVA, WHEAT, HOTBAR, COLD_WALLET, SOLID, SHAPES
   UNBREAKABLE, shopOfBlock, isCrop, isSoil, cropInfo, CROPS, MINE_TOOL, rightTool, LEAFY, GRASS, SNOW_GRASS, PLANT } from './blocks.js';
 import { daylight } from './daycycle.js';
 import { nextRate, zecFor, round2 } from './market.js';
-import { STATS, rollStats, statEffects, withBonus } from './stats.js';
+import { STATS, rollStats, statEffects, withBonus, migrateStats } from './stats.js';
 import { GUNS, AMMO, spreadDir } from './weapons.js';
 import { VoiceRoom } from './voiceroom.js';
 import { runCommand } from './commands.js';
@@ -258,7 +258,6 @@ export class Game {
       if (earned > 0) p.skills.dishwash = Math.floor(earned);
     }
     p.level = levelFor(totalPoints(p.skills));
-    p.maxHp = maxHpFor(p.level);
     p.buildy = !!saved.buildy;
     p.quests = cleanQuests(saved.quests); // (quests.js)
     if (typeof saved.worn === 'string' && isArmor(saved.worn)) { p.worn = saved.worn; p.wornFree = !!saved.wornFree; }
@@ -267,14 +266,16 @@ export class Game {
     // Stats and traits belong to the character (characters.js): chosen and rolled when it was made.
     const firstTime = !saved.pos && !saved.skills;
     p.traits = Object.fromEntries(Object.keys(TRAITS).map((k) => [k, !!ch.traits?.[k]]));
-    p.baseStats = this._cleanStats(ch.stats || {});
+    p.baseStats = this._cleanStats(migrateStats(ch.stats) || {}); // (stats.js: older saves use the old stat names)
     // Attribute points (stats.js): what you've put in, and what's left. Saves from before them get the points
     // their level would have earned.
     if (saved.statBonus && typeof saved.statBonus === 'object') {
-      for (const k of Object.keys(STATS)) if (Number.isInteger(saved.statBonus[k]) && saved.statBonus[k] > 0) p.statBonus[k] = saved.statBonus[k];
+      const bonus = migrateStats(saved.statBonus);
+      for (const k of Object.keys(STATS)) if (Number.isInteger(bonus[k]) && bonus[k] > 0) p.statBonus[k] = bonus[k];
     }
     p.statPoints = Number.isInteger(saved.statPoints) && saved.statPoints >= 0 ? saved.statPoints : (ch.spare || 0) + (p.level - 1) * T.statPointsPerLevel; // (points left from making it)
     p.stats = withBonus(p.baseStats, p.statBonus);
+    p.maxHp = p.maxHpNow(); // (level and Built Different)
     const sp = saved.pos;
     const resume = saved.seed === this.seed && sp && num(sp.x) && num(sp.y) && num(sp.z) && sp.y > 0;
     const b = saved.bed;
@@ -291,6 +292,8 @@ export class Game {
       phoneOut: false, textCd: 0, poopT: 0, upsetHurtT: 0, gunCd: {}, grapple: null, deathT: 0, printJob: null, meleeCd: 0, castCd: {}, lastYou: '', buildSwitch: null,
     };
     p.onHurt = (amount) => e.send({ type: 'hurt', amount, knock: p.lastKnock });
+    p.rand = this.rand;
+    p.onDodge = () => e.send({ type: 'msg', kind: 'event', text: '💨 Dodged!' }); // Cracked
     this.players.set(e.id, e);
 
     const you = this._you(e);
@@ -889,7 +892,7 @@ export class Game {
     const chop = style === 'chop'; // an overhead slash: harder, and slower to recover from
     e.meleeCd = T.meleeCooldown * (chop ? T.chopCooldown : 1);
     const stats = itemStats(kind);
-    const damage = Math.max(1, Math.round(stats.damage * statEffects(e.p.stats).damage * this._mult(e) * (chop ? T.chopDamage / 100 : 1))); // Strongth, Power Surge
+    const damage = Math.max(1, Math.round(stats.damage * statEffects(e.p.stats).damage * this._mult(e) * (chop ? T.chopDamage / 100 : 1))); // Mog, Power Surge
     target.damage(damage, e.p.pos.x, e.p.pos.z, stats.knock * (chop ? 1.3 : 1), this._src(e.id, itemName(kind), kind));
     if (kind === 'pillow') this._fx({ type: 'feathers', x: c.x, y: c.y, z: c.z });
   }
@@ -1076,8 +1079,9 @@ export class Game {
     const { target, entry } = found;
     const size = kind in SIZE_SPELLS;
     if (entry) { // another player
+      if (this._shrugOff(entry, kind)) return true; // Built Different
       if (size) for (const k in SIZE_SPELLS) target.effects[k] = 0;
-      target.effects[kind] = seconds;
+      target.effects[kind] = this._debuffTime(target, seconds);
       const text = { blind: `${e.name} blinded you!`, shrink: `${e.name} shrank you!`, enlarge: `${e.name} made you huge!`, polymorph: `${e.name} turned you into a baby!`, hallucinate: `${e.name} messed with your head...` }[kind];
       entry.send({ type: 'msg', kind: 'sick', text });
       this._sendYou(entry);
@@ -1220,8 +1224,30 @@ export class Game {
 
   /** Slows a mob or player for `seconds` (the Chilled speed setting). */
   _chill(target, seconds) {
-    if (target.effects) target.effects.chill = Math.max(target.effects.chill || 0, seconds);
-    else target.chillT = Math.max(target.chillT || 0, seconds);
+    if (target.effects) {
+      const entry = [...this.players.values()].find((o) => o.p === target);
+      if (!(target.effects.chill > 0) && entry && this._shrugOff(entry, 'chill')) return; // Built Different
+      target.effects.chill = Math.max(target.effects.chill || 0, this._debuffTime(target, seconds));
+    } else target.chillT = Math.max(target.chillT || 0, seconds);
+  }
+
+  /**
+   * Built Different: a chance for a player to shrug off a debuff (hostile spells, food reactions). One that
+   * shrugged something off stays clear of it for a few seconds, so a blizzard's bites don't just re-roll.
+   */
+  _shrugOff(e, kind) {
+    e.shrug ??= {};
+    if (e.shrug[kind] > this.clock) return true;
+    if (!(this.rand() < statEffects(e.p.stats).resist)) return false;
+    e.shrug[kind] = this.clock + 3;
+    const what = { chill: 'the cold', blind: 'the blindness', shrink: 'the shrinking', enlarge: 'the growth spurt', polymorph: 'the baby curse', hallucinate: 'the visions', headache: 'the headache', upset: 'the stomach ache' }[kind] || 'it';
+    e.send({ type: 'msg', kind: 'event', text: `💪 Built Different: you shrugged off ${what}` });
+    return true;
+  }
+
+  /** How long a debuff lasts on a player (Built Different shortens it). */
+  _debuffTime(p, seconds) {
+    return seconds * statEffects(p.stats).debuffTime;
   }
 
   /** Turns water within `radius` of a point into ice (`surface`: only the top layer, near the point's height). */
@@ -1319,7 +1345,7 @@ export class Game {
     if (gun.type === 'arrow') { // a real arrow: it arcs, and hurts what it hits (fireballs.js carries it)
       // A bow you draw (hold, then let go): a part-drawn arrow is slower and weaker. The client says how far.
       const pull = GUNS[kind].draw ? Math.max(T.bowMinDraw / 100, Math.min(1, num(draw) ? draw : 1)) : 1;
-      Object.assign(this.fireballs.shoot(origin, dir, e.id, { kind: 'arrow', speed: gun.speed * (0.35 + 0.65 * pull), gravity: gun.gravity, radius: 0, mult: gun.damage * mult * pull, lifetime: 6, skill: kind }), { knock: gun.knock * pull, weapon: gun.name });
+      Object.assign(this.fireballs.shoot(origin, dir, e.id, { kind: 'arrow', speed: gun.speed * (0.35 + 0.65 * pull), gravity: gun.gravity, radius: 0, mult: gun.damage * mult * pull * statEffects(e.p.stats).damage, lifetime: 6, skill: kind }), { knock: gun.knock * pull, weapon: gun.name });
       this._fx({ type: 'shot', gun: kind, by: e.id, o: at(0, dir), ends: [] });
       return;
     }
@@ -1418,18 +1444,19 @@ export class Game {
     } else if (result === 'ate' && (FOOD[kind].cure || FOOD[kind].mana)) {
       const bits = [p.healFor(kind) > 0 ? `+${p.healFor(kind)} health` : '', FOOD[kind].cure ? 'You feel better' : '', FOOD[kind].mana ? `+${FOOD[kind].mana} mana` : ''];
       e.send({ type: 'msg', text: bits.filter(Boolean).join(' · '), kind: 'heal' });
-    } else if (result === 'ate' && FOOD[kind].raw === 'meat' && this.rand() * 100 < T.rawUpset) { // raw meat: a gamble
-      p.effects.upset = T.upsetSeconds;
+    } else if (result === 'ate' && FOOD[kind].raw === 'meat' && this.rand() * 100 < T.rawUpset && !this._shrugOff(e, 'upset')) { // raw meat: a gamble
+      p.effects.upset = this._debuffTime(p, T.upsetSeconds);
       e.upsetHurtT = T.upsetEvery;
       e.upsetCause = 'rawmeat';
       e.poopT = 0.5;
       e.send({ type: 'msg', text: `+${p.healFor(kind)} health, but that was raw. Your stomach is not happy.`, kind: 'sick' });
     } else if (result === 'ate') e.send({ type: 'msg', text: `+${p.healFor(kind)} health`, kind: 'heal' });
+    else if (result === 'intolerant' && this._shrugOff(e, FOOD[kind].allergen === 'gluten' ? 'headache' : 'upset')) { /* Built Different */ }
     else if (result === 'intolerant' && FOOD[kind].allergen === 'gluten') {
-      p.effects.headache = T.headacheSeconds;
+      p.effects.headache = this._debuffTime(p, T.headacheSeconds);
       e.send({ type: 'msg', text: 'Ow. Gluten headache.', kind: 'sick' });
     } else if (result === 'intolerant') {
-      p.effects.upset = T.upsetSeconds;
+      p.effects.upset = this._debuffTime(p, T.upsetSeconds);
       e.upsetHurtT = T.upsetEvery;
       e.poopT = 0.5;
       e.upsetCause = 'lactose';
@@ -1452,7 +1479,7 @@ export class Game {
 
   /** Prints a tool, charging its dollar price in ZEC at this moment's rate. */
   _print(e, { kind }) {
-    const zec = printable(kind) ? zecFor(this.priceFor(e.p, kind), this.rate) : 0;
+    const zec = printable(kind) ? zecFor(printUsd(kind), this.rate) : 0; // (no Rizz at the printer)
     const reason = !zec ? 'unknown' : e.printJob ? 'busy' : !e.p.pay(zec) ? 'money' : null;
     if (reason) {
       e.send({ type: 'printFailed', reason, zec, rate: this.rate });
@@ -1467,7 +1494,7 @@ export class Game {
   _order(e, { kind }) {
     const offer = shopOffer(kind);
     if (!offer) return;
-    const usd = Math.round(this.priceFor(e.p, kind, offer.usd) * (1 + this.settings.deliveryFee / 100) * 100) / 100;
+    const usd = Math.round(offer.usd * (1 + this.settings.deliveryFee / 100) * 100) / 100; // (no Rizz on CONSUME)
     const zec = zecFor(usd, this.rate);
     if (e.p.orders.length >= T.maxOrders) return e.send({ type: 'msg', kind: 'deny', text: `CONSUME: you already have ${T.maxOrders} deliveries on the way` });
     if (!e.p.pay(zec)) return e.send({ type: 'msg', kind: 'deny', text: `CONSUME: not enough Zcash (${itemName(kind)} costs ${zec.toFixed(2)} ZEC with delivery)` });
@@ -1487,8 +1514,8 @@ export class Game {
     if (this.multiplayer) this._broadcast({ type: 'msg', kind: 'setting', text: `${e.name} set ${SETTINGS[key].name} to ${settingText(key, v)}` });
   }
 
-  /** A dollar price for this player (Rizz haggles): `usd`, or the printer price of `kind`. */
-  priceFor(p, kind, usd = printUsd(kind)) {
+  /** A Fantasy Town shopkeeper's dollar price for this player (Rizz haggles; the printer and CONSUME don't). */
+  priceFor(p, kind, usd) {
     return Math.round(usd * statEffects(p.stats).price * 100) / 100;
   }
 
@@ -1768,6 +1795,7 @@ export class Game {
     p.statPoints--;
     p.statBonus[key] = (p.statBonus[key] || 0) + 1;
     p.stats = withBonus(p.baseStats, p.statBonus);
+    p.refreshMaxHp(); // (Built Different)
     this._sendYou(e);
   }
 
@@ -1798,7 +1826,7 @@ export class Game {
       e.textCd -= dt;
       e.meleeCd -= dt;
       for (const k in e.castCd) e.castCd[k] -= dt;
-      if (!p.dead) p.mana = Math.min(maxMana(p.stats, this.settings), p.mana + manaRegen(p.stats, this.settings) * dt); // mana refills (Smartness)
+      if (!p.dead) p.mana = Math.min(maxMana(p.stats, this.settings), p.mana + manaRegen(p.stats, this.settings) * dt); // mana refills (Big Brain)
       if (e.buildSwitch && p.dead) e.buildSwitch = null;
       if (e.buildSwitch && (e.buildSwitch.t -= dt) <= 0) {
         p.buildy = e.buildSwitch.to;
@@ -1874,6 +1902,7 @@ export class Game {
         else this._fx({ type: 'fizzle', x: ev.x, y: ev.y, z: ev.z });
       }
       this._zapOrbs(dt);
+      this.mobs.time = this.time; // (Tung Tung Tung Sahur keeps its own hours)
       for (const ev of this.mobs.update(dt, bodies, light)) this._mobEvent(ev, entries);
       this.npcs.update(dt, bodies);
       for (const ev of this.throwables.update(dt, (pos, s) => this._targetAt(pos, s.owner))) {
@@ -2207,7 +2236,7 @@ export class Game {
     if (op === 'turnin') {
       if (!active || !questReady(active, p)) return this._sendNpc(e, n);
       if (active.kind === 'fetch') spend(p, itemGroup(active.item), active.item, active.n);
-      const zec = zecFor(active.usd, this.rate);
+      const zec = zecFor(Math.round(active.usd * statEffects(p.stats).reward * 100) / 100, this.rate); // Rizz: bigger rewards
       p.wallet.zcash = round2(p.wallet.zcash + zec);
       p.quests.active = p.quests.active.filter((q) => q !== active);
       p.quests.count[n.key] = (p.quests.count[n.key] || 0) + 1;

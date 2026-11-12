@@ -541,6 +541,24 @@
       #overlay #identity { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; align-items: start; }
       #overlay #identity #net-status, #overlay #identity small { grid-column: 1 / -1; }
     }
+    /* Screen sizes: a class on a full-window screen (the backdrop) that sizes its .card.
+       small: centred in the middle third of the window; left / right: that half of the window, full height;
+       large: most of the window (like Settings). (#overlay is named too: its own rules are more specific.) */
+    .size-small > .card, #overlay.size-small > .card {
+      width: max(33.34vw, min(420px, 100vw - 32px)); max-width: calc(100vw - 32px); min-height: 0; margin: auto; box-sizing: border-box;
+      padding: 28px; border: 1px solid var(--panel-border); border-radius: 18px; background: var(--panel);
+    }
+    .size-left > .card, .size-right > .card, #overlay.size-left > .card, #overlay.size-right > .card {
+      width: max(50vw, min(420px, 100vw)); max-width: 100vw; height: 100%; min-height: 0; box-sizing: border-box; overflow-y: auto;
+      border: none; border-radius: 0; background: var(--panel);
+    }
+    .size-left > .card, #overlay.size-left > .card { margin-right: auto; }
+    .size-right > .card, #overlay.size-right > .card { margin-left: auto; }
+    .size-large > .card, #overlay.size-large > .card {
+      width: 100%; height: 100%; box-sizing: border-box; border: none; border-radius: 0; background: transparent;
+    }
+    #overlay.size-small #identity { display: block; } /* one column in a small screen */
+    #overlay.size-small .tag { display: none; } /* (the key hints are for the main menu) */
     .card {
       width: min(420px, calc(100vw - 32px)); padding: 28px; border-radius: 18px; text-align: center;
       background: var(--panel); border: 1px solid var(--panel-border);
@@ -658,6 +676,7 @@
       background: rgba(0, 0, 0, 0.3); border: 1px solid var(--panel-border);
     }
     #identity .id-buttons { display: flex; gap: 8px; margin-top: 10px; }
+    #identity .id-buttons[hidden] { display: none; }
     #identity label.volume { margin-top: 10px; }
     #volume { flex: 1; accent-color: var(--accent); }
     #identity .id-buttons button { padding: 7px 12px; }
@@ -941,7 +960,8 @@
         <label id="player-name-row">Your name <input id="player-name" maxlength="20" autocomplete="off" spellcheck="false"></label>
         <div id="account" hidden>
           <div id="account-new">
-            <label>Your name <input id="account-name" maxlength="20" autocomplete="off" spellcheck="false" placeholder="Pick a name"></label>
+            <p>This is your Player name, not a character name: each Player can have multiple characters.</p>
+            <label>Player Name: <input id="account-name" maxlength="20" autocomplete="off" spellcheck="false" placeholder="Pick a name"></label>
             <div class="id-buttons">
               <button id="account-create" type="button" class="primary">Create Player</button>
               <button id="account-recover-open" type="button">Recover Player</button>

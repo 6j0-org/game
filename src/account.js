@@ -52,7 +52,9 @@ export async function signIn({ store, link, status }) {
 /** The title screen's Create Player / Recover Player. Resolves with { uid, key } once there's a Player. */
 function createOrRecover({ store, link, say, hadOne }) {
   const panel = document.getElementById('account');
+  const screen = document.getElementById('overlay');
   panel.hidden = false;
+  screen.classList.add('size-small'); // Create Player is a small screen (index.html: screen sizes)
   if (!hadOne) say(link.mode === 'single' ? 'Single player: create a Player to start.' : 'Welcome! Create a Player to join this world.');
   const newEl = document.getElementById('account-new');
   const recoverEl = document.getElementById('account-recover');
@@ -69,6 +71,7 @@ function createOrRecover({ store, link, say, hadOne }) {
       if (reply.type !== 'created') { say(reply.reason, true); return; }
       store.set(keyFor(link), JSON.stringify({ uid: reply.uid, key: reply.key })); // signed in from now on
       panel.hidden = true;
+      screen.classList.remove('size-small');
       say(`Hello, ${reply.name}!`);
       resolve({ uid: reply.uid, key: reply.key });
     };
@@ -194,7 +197,7 @@ function openCreator({ link, chars, onMade }) {
       row.className = 'cstat';
       row.innerHTML = `<div><span></span><small></small></div><button type="button">−</button><b></b><button type="button">+</button>`;
       row.querySelector('span').textContent = def.name;
-      row.querySelector('small').textContent = def.effect ? def.effect : 'just for show';
+      row.querySelector('small').textContent = def.effect ? def.effect : 'no effect yet';
       row.querySelector('b').textContent = String(stats[k]);
       const [minus, plus] = row.querySelectorAll('button');
       minus.disabled = stats[k] <= base;
