@@ -395,15 +395,41 @@ export class Effects {
 
   /** A burning body: call every frame. */
   /** Dragon's Breath: a gout of fire from (x, y, z) along d, `range` long and `arc` degrees wide. */
-  breath(x, y, z, d, range, arc) {
+  breath(x, y, z, d, range, arc, n = 70) {
     const spread = Math.tan((Math.min(170, arc) / 2) * (Math.PI / 180));
-    for (let i = 0; i < 70; i++) {
-      const speed = range * (2.2 + Math.random() * 1.6); // (it reaches about `range` in its short life)
+    const drag = DRAG[KIND.FIRE];
+    for (let i = 0; i < n; i++) {
+      // Fast enough that, slowed by the drag, it really gets to the end of the cone (and a little past) in its life.
+      const life = 0.35 + Math.random() * 0.2;
+      const reach = range * (0.9 + Math.random() * 0.35);
+      const speed = (reach * drag) / (1 - Math.exp(-drag * life));
       const jx = (Math.random() - 0.5) * 2 * spread;
       const jy = (Math.random() - 0.5) * 2 * spread * 0.6;
       const jz = (Math.random() - 0.5) * 2 * spread;
       this._emit(KIND.FIRE, x + d.x * 0.6, y + d.y * 0.6 - 0.15, z + d.z * 0.6,
-        (d.x + jx) * speed, (d.y + jy) * speed, (d.z + jz) * speed, Math.random() < 0.6 ? FIRE_HOT : FIRE_MID, 0.25 + Math.random() * 0.15);
+        (d.x + jx) * speed, (d.y + jy) * speed, (d.z + jz) * speed, Math.random() < 0.6 ? FIRE_HOT : FIRE_MID, life);
+    }
+  }
+
+  /** A shockwave: particles flying out flat in a ring to radius `r` (ultimates). `color` is a hex number. */
+  ring(x, y, z, r, color, n = 120) {
+    const c = new THREE.Color(color);
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + Math.random() * 0.1;
+      const speed = r * (2.2 + Math.random() * 0.8);
+      this._emit(KIND.SMOKE, x + Math.cos(a) * 0.5, y + (Math.random() - 0.3) * 0.6, z + Math.sin(a) * 0.5, Math.cos(a) * speed, Math.random() * 1.5, Math.sin(a) * speed, c, 0.45 + Math.random() * 0.2);
+    }
+  }
+
+  /** A wave rolling out along the ground in a cone (Stampede): dust thrown up as it goes. */
+  wave(x, y, z, d, range, arc, color, n = 160) {
+    const c = new THREE.Color(color);
+    const spread = (arc / 2) * (Math.PI / 180);
+    const base = Math.atan2(d.x, d.z);
+    for (let i = 0; i < n; i++) {
+      const a = base + (Math.random() * 2 - 1) * spread;
+      const speed = range * (1.4 + Math.random() * 0.8);
+      this._emit(KIND.SMOKE, x, y - 0.6 + Math.random() * 0.5, z, Math.sin(a) * speed, 1 + Math.random() * 2.5, Math.cos(a) * speed, c, 0.6 + Math.random() * 0.3);
     }
   }
 

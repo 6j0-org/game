@@ -14,7 +14,7 @@ import { World, CH, CS } from './world.js';
 import { Player } from './player.js';
 import { Mobs, MOB_TYPES } from './mobs.js';
 import { spend, ammoCount, scrollKind, meleeStyle, itemGroup, giveItem } from './items.js';
-import { Drops, Throwables, FOOD, DISHES, TOOLS, TRAITS, itemStats, isMiningKind, itemName, rollTraits, fallHealFor, fallDamageFor, itemCount, blockIdOf, printable, printUsd, BLOCK_PRINTS, shopOffer, grantItem,
+import { Drops, Throwables, FOOD, DISHES, TOOLS, TRAITS, itemStats, isMiningKind, itemName, newTrait, dietRefuses, fallHealFor, fallDamageFor, itemCount, blockIdOf, printable, printUsd, BLOCK_PRINTS, shopOffer, grantItem,
   townOffer, isArmor, scrollOf } from './items.js';
 import { SETTINGS, cleanSetting, loadSettings, migrateSettings, SETTINGS_VERSION, settingText, gunStats, setTuning } from './settings.js';
 import { Drones } from './drones.js';
@@ -40,6 +40,7 @@ import { runCommand } from './commands.js';
 import { BESTIARY } from './bestiary.js';
 import { GARDEN_TOOLS, TILLABLE, till, water, torch, newDay, harvest, canPlant } from './garden.js';
 import { Npcs } from './npcs.js';
+import { ULTIMATES, ultFor, ultBuff, ultMelee } from './ultimates.js';
 import { cleanJobs, cleanJob, jobUsd, jobSeconds, tillAround } from './jobs.js';
 import { cleanQuests, questOffer, offerSeed, questReady, questGoal, questAsk, lostName, hello, thanks } from './quests.js';
 import { forageFind } from './forage.js';
@@ -51,6 +52,7 @@ const SNAPSHOT_EVERY = 1 / 15; // multiplayer; single-player sends one every tic
 const SAVE_EVERY = 10;
 const PRUNE_EVERY = 5;
 const REACH = 8; // a little generous: reported positions lag behind slightly
+const BREATH_TICK = 0.15; // seconds between puffs of a held Dragon's Breath (each burns breathDamage × this)
 /** What each kind of projectile is called in a death message (guns set their own name on the shot). */
 const PROJECTILE_NAMES = { snowball: 'Blizzard', fireball: 'Fireball', missile: 'Magic Missile', icebolt: 'Icebolt', rocket: 'Rocket Launcher', orb: 'Overcharge Cannon', arrow: 'a bow' };
 const INVENTORIES = ['food', 'dishes', 'wallet', 'tools', 'blocks', 'scrolls', 'unfired', 'materials'];
@@ -58,12 +60,10 @@ const TEXT_MAX = 200; // characters per text message
 const TEXT_COOLDOWN = 0.4;
 const MAX_MESSES = 300;
 
-/** "You were born lactose intolerant." etc. */
+/** "Your traits: 🥛 Lactose intolerant." (a new character's first look at itself) */
 function traitText(traits) {
-  const names = ['gluten', 'lactose'].filter((k) => traits[k]);
-  const food = names.length ? `This life you're ${names.join(' and ')} intolerant.` : 'No food intolerances this life. Eat anything!';
-  const extras = [traits.fallHealing && 'Also, falling heals you. Somehow.', traits.lowGravity && 'Gravity barely bothers you: big jumps, soft landings.'].filter(Boolean);
-  return [food, ...extras].join(' ');
+  const mine = Object.entries(TRAITS).filter(([k]) => traits[k]).map(([, t]) => `${t.icon} ${t.name}`);
+  return mine.length ? `Your trait${mine.length > 1 ? 's' : ''}: ${mine.join(', ')}. (The character sheet, I, says what that means.)` : 'Nothing unusual about you. Eat anything!';
 }
 
 const num = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -145,6 +145,7 @@ export class Game {
     this.fireballs = new Fireballs(this.world);
     this.drones = new Drones(rand); // CONSUME deliveries in flight
     this.npcs = new Npcs(this.world, rand); // the Fantasy Town's people (npcs.js), out when someone's near a market
+    this.mobs.onHit = (mob, amount, src) => { if (src?.cause === 'player') this._ultCharge(this.players.get(src.byId), T.ultChargeHit); }; // (ultimates.js)
     this.npcs.busy = (key) => [...this.players.values()].some((o) => o.p.jobs.some((j) => j.npc === key)); // away on a job (jobs.js)
     this.storms = []; // Blizzards: { id, owner, x, y, z, t, damage, chill, biteT }
     this.nextStormId = 1;
@@ -269,7 +270,8 @@ export class Game {
     p.validateHands();
     // Stats and traits belong to the character (characters.js): chosen and rolled when it was made.
     const firstTime = !saved.pos && !saved.skills;
-    p.traits = Object.fromEntries(Object.keys(TRAITS).map((k) => [k, !!ch.traits?.[k]]));
+    const traits = saved.traits && typeof saved.traits === 'object' ? saved.traits : ch.traits; // (gained and lost since: the save has them)
+    p.traits = Object.fromEntries(Object.keys(TRAITS).map((k) => [k, !!traits?.[k]]));
     p.baseStats = this._cleanStats(migrateStats(ch.stats) || {}); // (stats.js: older saves use the old stat names)
     // Attribute points (stats.js): what you've put in, and what's left. Saves from before them get the points
     // their level would have earned.
@@ -295,7 +297,12 @@ export class Game {
       yaw: 0, pitch: 0, crouch: false, flying: false,
       phoneOut: false, textCd: 0, poopT: 0, upsetHurtT: 0, gunCd: {}, grapple: null, deathT: 0, printJob: null, meleeCd: 0, castCd: {}, lastYou: '', buildSwitch: null,
     };
-    p.onHurt = (amount) => e.send({ type: 'hurt', amount, knock: p.lastKnock });
+    p.onHurt = (amount) => {
+      e.send({ type: 'hurt', amount, knock: p.lastKnock });
+      const by = p.lastHit; // a hit in combat charges both ultimates (ultimates.js)
+      if (by?.cause === 'mob' || by?.cause === 'player') this._ultCharge(e, T.ultChargeHurt);
+      if (by?.cause === 'player') this._ultCharge(this.players.get(by.byId), T.ultChargeHit);
+    };
     p.rand = this.rand;
     p.onDodge = () => e.send({ type: 'msg', kind: 'event', text: '💨 Dodged!' }); // Cracked
     this.players.set(e.id, e);
@@ -349,6 +356,9 @@ export class Game {
       case 'setting': return this._setting(e, msg); // from the main menu
       case 'command': return this._command(e, msg); // the / console
       case 'stat': return this._addStat(e, msg); // the character sheet: works any time
+      case 'trait': return this._trait(e, msg); // buying a trait off (the character sheet)
+      case 'ult': return this._ult(e); // let your ultimate go (H)
+      case 'breathe': return this._stopBreath(e); // let go of Dragon's Breath (always allowed)
       default:
     }
     if (p.dead || e.phoneOut || p.effects.polymorph > 0) return; // dead, on your phone, or an infant: no actions
@@ -642,6 +652,13 @@ export class Game {
       const pts = levels * T.statPointsPerLevel;
       p.statPoints += pts;
       e.send({ type: 'msg', text: `Level ${p.level}! Max health ${p.maxHp}${pts ? ` · ${pts} attribute point${pts === 1 ? '' : 's'} to spend (I)` : ''}`, kind: 'level' });
+      for (let i = 0; i < levels; i++) { // a new trait every level (items.js TRAITS)
+        const t = newTrait(p.traits, this.rand);
+        if (!t) break;
+        p.traits[t] = true;
+        e.send({ type: 'msg', kind: 'trait', text: `${TRAITS[t].icon} New trait: ${TRAITS[t].name}. (Attribute points can get rid of it: the character sheet, I.)` });
+      }
+      this._sendYou(e);
       if (this.multiplayer) this._broadcast({ type: 'msg', kind: 'event', text: `⭐ ${e.name} reached level ${p.level}` }, e);
     }
   }
@@ -896,10 +913,11 @@ export class Game {
     const c = target.center;
     if (!this._within(e, c.x, c.y, c.z)) return;
     const chop = style === 'chop'; // an overhead slash: harder, and slower to recover from
-    e.meleeCd = T.meleeCooldown * (chop ? T.chopCooldown : 1);
+    const ult = e.ultOn?.key; // (Titan Blade, Thousand Cuts, Flurry of Fists, Rally: ultimates.js)
+    e.meleeCd = T.meleeCooldown * (chop ? T.chopCooldown : 1) * ultBuff(ult, 'cooldown', 1);
     const stats = itemStats(kind);
-    const damage = Math.max(1, Math.round(stats.damage * statEffects(e.p.stats).damage * this._mult(e) * (chop ? T.chopDamage / 100 : 1))); // Mog, Power Surge
-    target.damage(damage, e.p.pos.x, e.p.pos.z, stats.knock * (chop ? 1.3 : 1), this._src(e.id, itemName(kind), kind));
+    const damage = Math.max(1, Math.round(stats.damage * statEffects(e.p.stats).damage * this._mult(e) * ultMelee(ult) * (chop ? T.chopDamage / 100 : 1))); // Mog, Power Surge
+    target.damage(damage, e.p.pos.x, e.p.pos.z, stats.knock * (chop ? 1.3 : 1) * ultBuff(ult, 'knock', 1), this._src(e.id, itemName(kind), kind));
     if (kind === 'pillow') this._fx({ type: 'feathers', x: c.x, y: c.y, z: c.z });
   }
 
@@ -909,9 +927,10 @@ export class Game {
     if (!aim) return;
     const [eye, dir] = aim;
     this._reveal(e);
-    e.meleeCd = T.meleeCooldown;
+    const ult = e.ultOn?.key;
+    e.meleeCd = T.meleeCooldown * ultBuff(ult, 'cooldown', 1);
     const stats = itemStats(kind);
-    const damage = Math.max(1, Math.round(stats.damage * statEffects(e.p.stats).damage * this._mult(e) * T.sweepDamage / 100));
+    const damage = Math.max(1, Math.round(stats.damage * statEffects(e.p.stats).damage * this._mult(e) * ultMelee(ult) * T.sweepDamage / 100));
     const fx = dir.x;
     const fz = dir.z;
     const flen = Math.hypot(fx, fz) || 1;
@@ -963,8 +982,9 @@ export class Game {
       return;
     }
     if (!knows) return e.send({ type: 'msg', kind: 'deny', text: `You don't know ${s.name}: buy its scroll from the Wizard in the Fantasy Town and read it` });
-    if ((e.castCd[spell] || 0) > 0) return;
-    const cost = scroll ? 0 : spellCost(spell, this.settings);
+    const overflow = ultBuff(e.ultOn?.key, 'spells', false); // Arcane Overflow: no mana, no cooldown
+    if ((e.castCd[spell] || 0) > 0 && !overflow) return;
+    const cost = scroll || overflow ? 0 : spellCost(spell, this.settings);
     if (p.mana < cost) {
       e.send({ type: 'msg', kind: 'deny', text: `Not enough mana for ${s.name} (${cost})` });
       return;
@@ -1012,7 +1032,13 @@ export class Game {
         e.send({ type: 'msg', kind: 'spell', text: `🕊️ You can fly for ${Math.round(p.effects.flight)} s: press F to take off` });
         break;
       case 'teleport': ok = this._blink(e, origin, dir, m('teleportRange')); break;
-      case 'dragon': this._breath(e, origin, dir, m('breathRange'), m('breathArc'), m('breathDamage') * power); break;
+      case 'dragon':
+        if (scroll) { this._breath(e, origin, dir, m('breathRange'), m('breathArc'), m('breathDamage') * 0.6 * power); break; } // a scroll: one roar
+        // Held: a stream of fire for as long as the button's down and the mana lasts (_tickBreath; `breathe` stops it).
+        e.breathing = { hand, kind, potency, skill: e.castSkill, tickT: 0 };
+        this._reveal(e);
+        this._sendYou(e);
+        return;
       case 'blind': ok = this._hex(e, target(), 'blind', m('blindSeconds') * potency); break;
       default: return;
     }
@@ -1127,8 +1153,212 @@ export class Game {
     return true;
   }
 
-  /** Dragon's Breath: fire in a cone in front of you burns every creature (and player, with PvP) in it. */
-  _breath(e, origin, dir, range, arc, damage) {
+  /**
+   * Dragon's Breath, held: every BREATH_TICK seconds, fire where you're looking (your `state` yaw and pitch),
+   * draining its mana cost a second. Stops when you let go, run out of mana, put the focus away, die or get
+   * polymorphed.
+   */
+  _tickBreath(e, dt) {
+    const b = e.breathing;
+    const p = e.p;
+    if (p.dead || p.effects.polymorph > 0 || p.hands[b.hand] !== b.kind) return this._stopBreath(e);
+    const drain = ultBuff(e.ultOn?.key, 'spells', false) ? 0 : spellCost('dragon', this.settings) * dt; // (Arcane Overflow: free)
+    if (p.mana < drain) return this._stopBreath(e, 'Out of mana');
+    p.mana -= drain;
+    if ((b.tickT -= dt) > 0) return;
+    b.tickT = BREATH_TICK;
+    const yaw = e.yaw || 0;
+    const pitch = e.pitch || 0;
+    const dir = { x: -Math.sin(yaw) * Math.cos(pitch), y: Math.sin(pitch), z: -Math.cos(yaw) * Math.cos(pitch) };
+    const k = p.sizeScale;
+    const origin = { x: p.pos.x + dir.x * 0.6, y: p.pos.y + (e.crouch ? 1.3 : 1.55) * k + dir.y * 0.6, z: p.pos.z + dir.z * 0.6 };
+    const m = (key) => magic(this.settings, key);
+    e.castSkill = b.skill;
+    this._breath(e, origin, dir, m('breathRange') * Math.max(0.5, k), m('breathArc'), m('breathDamage') * BREATH_TICK * b.potency * this._mult(e), true);
+  }
+
+  /** Lets go of Dragon's Breath (and starts its cooldown). `why`: tell them, if it wasn't their idea. */
+  _stopBreath(e, why = null) {
+    if (!e.breathing) return;
+    e.breathing = null;
+    e.castCd.dragon = spellCooldown('dragon', this.settings);
+    if (why) e.send({ type: 'msg', kind: 'deny', text: `🐉 ${why}` });
+    this._sendYou(e);
+  }
+
+  // ---------- ultimates (ultimates.js) ----------
+
+  /** A hit in combat: charges `e`'s meter by `n` % (not while one's going, and not for Buildy Bois). */
+  _ultCharge(e, n) {
+    if (!e || e.p.dead || e.p.buildy) return;
+    e.ultHitT = 0;
+    if (!e.ultOn) e.p.ult = Math.min(100, e.p.ult + n);
+  }
+
+  /** Every tick: the meter drains after a while without a hit; a power-up or storm that's on runs (and ends). */
+  _tickUlt(e, dt) {
+    const p = e.p;
+    e.ultHitT = (e.ultHitT ?? 99) + dt;
+    if (!e.ultOn && p.ult > 0 && e.ultHitT > T.ultDecayDelay) p.ult = Math.max(0, p.ult - T.ultDecayRate * dt);
+    const on = e.ultOn;
+    if (!on) return;
+    if (p.dead) return this._ultEnd(e);
+    on.t -= dt;
+    if (on.def.kind === 'storm' && (on.tick -= dt) <= 0) {
+      on.tick = 0.25;
+      this._ultStorm(e, on.def);
+    }
+    if (on.t <= 0) this._ultEnd(e);
+  }
+
+  _ultEnd(e) {
+    e.ultOn = null;
+    e.p.ultResist = 1;
+    this._sendYou(e);
+  }
+
+  /** `ult`: let your ultimate go, if the meter's full. Which one is your class's (your best skill's). */
+  _ult(e) {
+    const p = e.p;
+    if (p.dead || p.buildy || p.effects.polymorph > 0 || e.ultOn) return;
+    if (p.ult < 100) return e.send({ type: 'msg', kind: 'deny', text: `Your ultimate isn't charged yet (${Math.floor(p.ult)}%): land some hits` });
+    const key = ultFor(p.skills);
+    const def = ULTIMATES[key];
+    p.ult = 0;
+    e.ultHitT = 99;
+    e.ultSkill = Object.entries(p.skills).sort((a, b) => b[1] - a[1])[0]?.[0] || null; // (kills with it train your class)
+    const at = { x: p.pos.x, y: p.pos.y + 1, z: p.pos.z };
+    this._fx({ type: 'ult', key, name: def.name, kind: def.kind, visual: def.visual || def.shot || key, by: e.id, x: r2(at.x), y: r2(at.y), z: r2(at.z), yaw: r2(e.yaw || 0),
+      r: def.kind === 'burst' ? T.ultBurstRadius : def.kind === 'storm' ? T.ultStormRadius : def.kind === 'cone' ? T.ultConeRange : 0 });
+    if (def.kind === 'aura' || def.kind === 'storm') {
+      const start = (o) => { o.ultOn = { key, def, t: T.ultSeconds, tick: 0 }; o.p.ultResist = ultBuff(key, 'resist', 1); };
+      start(e);
+      if (def.allies) { // Rally: the players round you too
+        for (const o of this.players.values()) {
+          if (o === e || o.ultOn || o.p.dead || this._dist(o.p.pos, p.pos) > T.ultHealRadius) continue;
+          start(o);
+          o.send({ type: 'msg', kind: 'level', text: `⚡ ${e.name} rallies you: ${def.name}!` });
+          this._sendYou(o);
+        }
+      }
+    } else if (def.kind === 'burst') this._ultBurst(e, def, at);
+    else if (def.kind === 'rain') this._ultRain(e, def);
+    else if (def.kind === 'cone') this._ultCone(e, def, at);
+    else if (def.kind === 'heal') {
+      const heal = (q, k) => { q.hp = Math.min(q.maxHp, q.hp + Math.ceil(q.maxHp * k)); };
+      if (def.self) heal(p, def.self * def.power);
+      else for (const o of this.players.values()) if (!o.p.dead && (o === e || this._dist(o.p.pos, p.pos) <= T.ultHealRadius)) { heal(o.p, def.power); this._sendYou(o); }
+    } else if (def.kind === 'warp') this._teleport(e, this._ultWarpTo(e), `⚡ ${def.name}!`);
+    if (def.kind !== 'heal' && def.kind !== 'warp') this._reveal(e);
+    e.send({ type: 'msg', kind: 'level', text: `⚡ ${def.name}!` });
+    this._sendYou(e);
+  }
+
+  _dist(a, b) {
+    return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+  }
+
+  /** Who an ultimate hits: monsters (not animals or pets), and other players with PvP on. */
+  _ultTargets(e) {
+    return [
+      ...this.mobs.list.filter((m) => !m.dead && !MOB_TYPES[m.type].passive),
+      ...(this.multiplayer && this.settings.pvp ? [...this.players.values()].filter((o) => o !== e && !o.p.dead).map((o) => o.p) : []),
+    ];
+  }
+
+  /** A storm's quarter-second: hurts (and shoves) everything within its reach. */
+  _ultStorm(e, def) {
+    const p = e.p;
+    const c = { x: p.pos.x, y: p.pos.y + 1, z: p.pos.z };
+    const dmg = T.ultStormDamage * 0.25 * def.power * this._mult(e);
+    for (const t of this._ultTargets(e)) {
+      if (this._dist(t.center, c) > T.ultStormRadius + (t.halfW || 0.3)) continue;
+      t.damage(Math.max(1, Math.round(dmg)), c.x, c.z, def.shove ?? 2, this._src(e.id, def.name, e.ultSkill));
+    }
+  }
+
+  /** A shockwave: damage, a shove (or pull), a lift, and an effect (root, sleep, blind) on everything in reach. */
+  _ultBurst(e, def, c) {
+    const dmg = T.ultBurstDamage * def.power * this._mult(e);
+    const secs = T.ultEffectSeconds;
+    for (const t of this._ultTargets(e)) {
+      const d = this._dist(t.center, c);
+      if (d > T.ultBurstRadius + (t.halfW || 0.3)) continue;
+      const undead = def.effect === 'blind' && MOB_TYPES[t.type]?.burns; // (Solar Flare burns them)
+      const hurt = dmg * (undead ? 3 : 1);
+      if (hurt > 0) t.damage(Math.max(1, Math.round(hurt)), c.x, c.z, def.push ?? 6, this._src(e.id, def.name, e.ultSkill));
+      else if (def.push && t.impulse) { const k = def.push / Math.max(1, d); t.impulse((t.pos.x - c.x) * k, 2, (t.pos.z - c.z) * k); }
+      if (def.lift && t.impulse && !t.effects) t.impulse(0, def.lift, 0);
+      if (t.effects) { // another player
+        if (def.effect === 'root') this._chill(t, secs);
+        else if (def.effect === 'blind' || def.effect === 'sleep') t.effects.blind = Math.max(t.effects.blind || 0, secs);
+      } else {
+        if (def.effect === 'root' || def.effect === 'sleep') t.rootT = Math.max(t.rootT || 0, secs);
+        if (def.effect === 'blind' || def.effect === 'sleep') t.blindT = Math.max(t.blindT || 0, secs); // (asleep: sees nobody)
+      }
+    }
+  }
+
+  /** Rockets, arrows or meteors from the sky, on the enemies round you (or about you, if there aren't enough). */
+  _ultRain(e, def) {
+    const p = e.p;
+    const near = this._ultTargets(e).filter((t) => this._dist(t.pos, p.pos) <= T.ultRainRadius).sort((a, b) => this._dist(a.pos, p.pos) - this._dist(b.pos, p.pos));
+    const dmg = T.ultRainDamage * def.power * this._mult(e);
+    const n = Math.round(T.ultRainCount);
+    for (let i = 0; i < n; i++) {
+      const t = near[i % Math.max(1, near.length)];
+      const ang = this.rand() * Math.PI * 2;
+      const r = 3 + this.rand() * (T.ultRainRadius - 3);
+      const aim = t ? { x: t.pos.x + (this.rand() - 0.5), y: t.pos.y + 0.5, z: t.pos.z + (this.rand() - 0.5) } : { x: p.pos.x + Math.cos(ang) * r, y: p.pos.y, z: p.pos.z + Math.sin(ang) * r };
+      const from = { x: aim.x + (this.rand() - 0.5) * 3, y: aim.y + 16 + i * 1.5, z: aim.z + (this.rand() - 0.5) * 3 }; // (staggered: they come down one after another)
+      const len = Math.hypot(aim.x - from.x, aim.y - from.y, aim.z - from.z);
+      const dir = { x: (aim.x - from.x) / len, y: (aim.y - from.y) / len, z: (aim.z - from.z) / len };
+      const kind = def.shot === 'arrow' ? 'arrow' : def.shot === 'meteor' ? 'fireball' : 'rocket';
+      const fb = this.fireballs.shoot(from, dir, e.id, { kind, speed: kind === 'arrow' ? 30 : 20, gravity: 0, radius: kind === 'arrow' ? 0 : 2.5, mult: kind === 'arrow' ? dmg : dmg / 15, lifetime: 6, skill: e.ultSkill });
+      Object.assign(fb, { gentle: true, ult: true, weapon: def.name, knock: 4 });
+    }
+  }
+
+  /** An explosion that hurts and shoves but leaves the ground alone (an ultimate's rockets and meteors). */
+  _gentleBlast(x, y, z, radius, mult, source) {
+    this.mobs.blast(x, y, z, radius, [...this.players.values()].map((o) => o.p), mult, source);
+    this._fx({ type: 'explode', x, y, z, radius, removed: [] });
+  }
+
+  /** Stampede: a wave in front of you (where you're facing), trampling and shoving everything in it. */
+  _ultCone(e, def, c) {
+    const yaw = e.yaw || 0;
+    const fx = -Math.sin(yaw);
+    const fz = -Math.cos(yaw);
+    const cosHalf = Math.cos((70 / 2) * (Math.PI / 180));
+    const dmg = T.ultConeDamage * def.power * this._mult(e);
+    for (const t of this._ultTargets(e)) {
+      const dx = t.pos.x - c.x;
+      const dz = t.pos.z - c.z;
+      const d = Math.hypot(dx, dz);
+      if (d > T.ultConeRange || Math.abs(t.pos.y - e.p.pos.y) > 4 || (d > 1 && (dx * fx + dz * fz) / d < cosHalf)) continue;
+      t.damage(Math.max(1, Math.round(dmg)), c.x, c.z, 12, this._src(e.id, def.name, e.ultSkill));
+      if (t.impulse && !t.effects) t.impulse(0, 6, 0);
+    }
+  }
+
+  /** Fast Travel: your current quest (the one you took last: the lost thing or garden, else whoever gave it), or your bed. */
+  _ultWarpTo(e) {
+    const q = e.p.quests.active[e.p.quests.active.length - 1];
+    let at = null;
+    if (q?.spot && !(q.kind === 'lost' && q.found) && !(q.kind === 'till' && (q.progress || 0) >= q.n)) at = { x: q.spot.x, z: q.spot.z };
+    else if (q) {
+      const m = /@(-?\d+),(-?\d+)$/.exec(q.giver || '');
+      if (m) at = { x: +m[1] + 12, z: +m[2] + 12 }; // (their market square)
+    }
+    if (!at) return this._spawnPoint(e);
+    const x = Math.floor(at.x);
+    const z = Math.floor(at.z);
+    return { x: x + 0.5, y: this.world.surfaceAt(x, z), z: z + 0.5 };
+  }
+
+  /** Dragon's Breath: fire in a cone in front of you burns every creature (and player, with PvP) in it. `stream`: one puff of a held breath. */
+  _breath(e, origin, dir, range, arc, damage, stream = false) {
     const cosHalf = Math.cos((Math.min(360, arc) / 2) * (Math.PI / 180));
     const targets = [
       ...this.mobs.list.filter((m) => !m.dead),
@@ -1144,7 +1374,7 @@ export class Game {
       if (this.world.raycast(origin, { x: dx / dist, y: dy / dist, z: dz / dist }, dist)) continue; // behind a wall
       if (damage > 0) t.damage(Math.max(1, Math.round(damage)), origin.x, origin.z, 3, this._src(e.id, 'Dragon\'s Breath', e.castSkill));
     }
-    this._fx({ type: 'breath', by: e.id, x: r2(origin.x), y: r2(origin.y), z: r2(origin.z), dx: r2(dir.x), dy: r2(dir.y), dz: r2(dir.z), range, arc });
+    this._fx({ type: 'breath', by: e.id, x: r2(origin.x), y: r2(origin.y), z: r2(origin.z), dx: r2(dir.x), dy: r2(dir.y), dz: r2(dir.z), range, arc, stream });
   }
 
   /** A Blizzard's ball of ice landed (on a block, a creature or a player, in water, or ran out of time): the storm starts there. */
@@ -1341,11 +1571,16 @@ export class Game {
     const gun = gunStats(kind, this.settings); // damage, rate, pellets and spread are server settings
     const p = e.p;
     const cd = `${hand}:${kind}`; // per hand, so two pistols can both fire
-    if ((e.gunCd[cd] || 0) > 0 || ammoCount(p, gun.ammo) < gun.per) return;
-    e.gunCd[cd] = gun.cooldown * 0.9; // a little slack for network timing
-    spend(p, 'ammo', gun.ammo, gun.per);
+    const ult = e.ultOn?.key; // (Fan the Hammer, Boomstick, Bullet Hose, Deadeye, Overload, Rally: ultimates.js)
+    const freeAmmo = ultBuff(ult, 'ammo', false);
+    if ((e.gunCd[cd] || 0) > 0 || (!freeAmmo && ammoCount(p, gun.ammo) < gun.per)) return;
+    e.gunCd[cd] = (gun.cooldown * 0.9) / ultBuff(ult, 'rate', 1); // a little slack for network timing
+    if (!freeAmmo) spend(p, 'ammo', gun.ammo, gun.per);
+    if (gun.pellets) gun.pellets = Math.round(gun.pellets * ultBuff(ult, 'pellets', 1)); // (gunStats gives us our own copy)
+    if (gun.spread) gun.spread *= ultBuff(ult, 'spread', 1);
+    if (gun.knock) gun.knock *= ultBuff(ult, 'knock', 1);
     const [origin, dir] = aim;
-    const mult = this._mult(e);
+    const mult = this._mult(e) * ultBuff(ult, 'gun', 1);
     const at = (t, dd) => ({ x: r2(origin.x + dd.x * t), y: r2(origin.y + dd.y * t), z: r2(origin.z + dd.z * t) });
 
     if (gun.type === 'arrow') { // a real arrow: it arcs, and hurts what it hits (fireballs.js carries it)
@@ -1373,7 +1608,7 @@ export class Game {
       const skip = new Set();
       for (let hit; (hit = this._rayTarget(e, origin, dir, maxT, skip));) {
         skip.add(hit.target);
-        const head = this._isHead(hit.target, origin.y + dir.y * hit.t);
+        const head = this._isHead(hit.target, origin.y + dir.y * hit.t, e);
         if (head) headshot = true;
         hit.target.damage(Math.round(gun.damage * mult * (head ? T.headshotDamage : 1)), origin.x, origin.z, gun.knock, this._src(e.id, gun.name, kind));
         hits.push(at(hit.t, dir));
@@ -1389,7 +1624,7 @@ export class Game {
         const maxT = block ? block.t : gun.range;
         const hit = this._rayTarget(e, origin, dd, maxT, null);
         if (hit) {
-          const head = this._isHead(hit.target, origin.y + dd.y * hit.t); // (each pellet counts on its own)
+          const head = this._isHead(hit.target, origin.y + dd.y * hit.t, e); // (each pellet counts on its own)
           if (head) headshot = true;
           totals.set(hit.target, (totals.get(hit.target) || 0) + gun.damage * mult * (head ? T.headshotDamage : 1));
           hits.push(at(hit.t, dd));
@@ -1411,6 +1646,7 @@ export class Game {
    * Walk over one to get it back (items.js Drops).
    */
   _spentArrow(fb, at, target) {
+    if (fb.ult) return; // (an Arrow Storm's arrows don't stay)
     if (this.rand() * 100 < T.arrowBreak) return;
     if (target && !target.effects) { target.arrows = Math.min(12, (target.arrows || 0) + 1); return; } // a creature
     if (target) { this.drops.spawn('arrow', target.pos.x, target.pos.y + 0.2, target.pos.z); return; } // a player
@@ -1420,7 +1656,8 @@ export class Game {
   }
 
   /** Does a shot hitting `target` at height `y` hit its head (the top Head size % of it)? */
-  _isHead(target, y) {
+  _isHead(target, y, e = null) {
+    if (!target.dead && ultBuff(e?.ultOn?.key, 'headshot', false)) return true; // Deadeye: every hit
     return !target.dead && y >= target.pos.y + target.height * (1 - T.headshotZone / 100);
   }
 
@@ -1443,6 +1680,7 @@ export class Game {
     if (!kind) return;
     const p = e.p;
     const result = p.eat(kind);
+    if (result === 'diet') return e.send({ type: 'msg', kind: 'deny', text: dietRefuses(p.traits, kind) });
     if (result === 'ate' && FOOD[kind].flap) {
       e.send({ type: 'msg', text: `🐦 You feel… flappy. Tap Space in mid-air to flap (${T.flapSeconds} s)`, kind: 'flap' });
     } else if (result === 'ate' && FOOD[kind].flightless) {
@@ -1450,7 +1688,7 @@ export class Game {
     } else if (result === 'ate' && (FOOD[kind].cure || FOOD[kind].mana)) {
       const bits = [p.healFor(kind) > 0 ? `+${p.healFor(kind)} health` : '', FOOD[kind].cure ? 'You feel better' : '', FOOD[kind].mana ? `+${FOOD[kind].mana} mana` : ''];
       e.send({ type: 'msg', text: bits.filter(Boolean).join(' · '), kind: 'heal' });
-    } else if (result === 'ate' && FOOD[kind].raw === 'meat' && this.rand() * 100 < T.rawUpset && !this._shrugOff(e, 'upset')) { // raw meat: a gamble
+    } else if (result === 'ate' && FOOD[kind].raw === 'meat' && !p.traits.carnivore && this.rand() * 100 < T.rawUpset && !this._shrugOff(e, 'upset')) { // raw meat: a gamble
       p.effects.upset = this._debuffTime(p, T.upsetSeconds);
       e.upsetHurtT = T.upsetEvery;
       e.upsetCause = 'rawmeat';
@@ -1794,6 +2032,18 @@ export class Game {
     this._sendYou(e);
   }
 
+  /** `trait` { op: 'remove', key }: buy a trait off with attribute points (traitRemoveCost). */
+  _trait(e, { op, key }) {
+    const p = e.p;
+    if (op !== 'remove' || !(key in TRAITS) || !p.traits[key]) return;
+    const cost = Math.round(T.traitRemoveCost);
+    if (!(p.statPoints >= cost)) return e.send({ type: 'msg', kind: 'deny', text: `It takes ${cost} attribute points to get rid of a trait` });
+    p.statPoints -= cost;
+    p.traits[key] = false;
+    e.send({ type: 'msg', kind: 'trait', text: `${TRAITS[key].icon} No longer ${TRAITS[key].name.toLowerCase()}` });
+    this._sendYou(e);
+  }
+
   /** Spend an attribute point on a stat (the + on the character sheet). */
   _addStat(e, { key }) {
     const p = e.p;
@@ -1862,6 +2112,8 @@ export class Game {
       if (e.fishing) this._tickFishing(e, dt);
       this._tickQuests(e);
       this._tickJobs(e);
+      if (e.breathing) this._tickBreath(e, dt);
+      this._tickUlt(e, dt);
       if (p.dead && !e.deathTold) { // tell everyone how it happened (the message log)
         e.deathTold = true;
         this._broadcast({ type: 'msg', kind: 'death', text: this._deathText(e) });
@@ -1896,7 +2148,7 @@ export class Game {
           this._fx({ type: 'frost', x: r2(ev.x), y: r2(ev.y), z: r2(ev.z) });
         } else if (fb.kind === 'arrow') { // a direct hit, no explosion
           const t = ev.type === 'explode' ? this._targetAt(ev, fb.owner) : null;
-          const head = t && this._isHead(t, ev.y);
+          const head = t && this._isHead(t, ev.y, this.players.get(fb.owner));
           if (t) t.damage(Math.max(1, Math.round(fb.mult * (head ? T.headshotDamage : 1))), ev.x - fb.vel.x, ev.z - fb.vel.z, fb.knock ?? 3, this._shotBy(fb));
           if (head) this._headshot(fb.owner);
           this._fx({ type: 'arrowHit', hit: !!t, x: r2(ev.x), y: r2(ev.y), z: r2(ev.z) });
@@ -1905,7 +2157,8 @@ export class Game {
           const t = this._targetAt(ev, fb.owner);
           if (t) t.damage(Math.max(1, Math.round(fb.mult)), ev.x - fb.vel.x, ev.z - fb.vel.z, 3, this._shotBy(fb));
           this._fx({ type: t ? 'missileHit' : 'fizzle', x: r2(ev.x), y: r2(ev.y), z: r2(ev.z) });
-        } else if (ev.type === 'explode' || fb.kind !== 'fireball') this._detonate(ev.x, ev.y, ev.z, fb.radius, fb.mult, this._shotBy(fb));
+        } else if (fb.gentle && (ev.type === 'explode' || fb.kind !== 'fireball')) this._gentleBlast(ev.x, ev.y, ev.z, fb.radius, fb.mult, this._shotBy(fb)); // (an ultimate's: the ground's left alone)
+        else if (ev.type === 'explode' || fb.kind !== 'fireball') this._detonate(ev.x, ev.y, ev.z, fb.radius, fb.mult, this._shotBy(fb));
         else this._fx({ type: 'fizzle', x: ev.x, y: ev.y, z: ev.z });
       }
       this._zapOrbs(dt);
@@ -2361,6 +2614,7 @@ export class Game {
       orders: p.orders.map((o) => ({ kind: o.kind, t: Math.max(0, Math.ceil(o.t)), drone: !!o.drone })),
       food: { ...p.food }, dishes: { ...p.dishes }, wallet: { ...p.wallet }, tools: { ...p.tools }, materials: { ...p.materials }, spells: [...p.spells], hotbars: { left: [...p.hotbars.left], right: [...p.hotbars.right] },
       scrolls: { ...p.scrolls }, worn: p.worn,
+      ult: Math.floor(p.ult), ultKey: ultFor(p.skills), ultOn: e.ultOn ? { key: e.ultOn.key, t: Math.max(0, Math.ceil(e.ultOn.t)) } : null,
       quests: this._questsYou(p),
       jobs: p.jobs.map((j) => ({ id: j.id, name: j.name, kind: j.kind, item: j.item, n: j.n, left: Math.max(0, Math.ceil((j.due - Date.now()) / 1000)) })), lastTill: !!p.lastTill,
       cooking: p.cooking ? { out: p.cooking.out, n: p.cooking.n, t: Math.max(0, Math.ceil(p.cooking.t)) } : null, unfired: { ...p.unfired }, kiln: p.kiln ? { t: Math.max(0, Math.ceil(p.kiln.t)), n: p.kiln.pieces.reduce((a, [, n]) => a + n, 0), text: piecesText(p.kiln.pieces) } : null,
@@ -2388,7 +2642,7 @@ export class Game {
         crouch: e.crouch, flying: e.flying, phone: e.phoneOut, hands: { ...e.p.hands }, dead: e.p.dead,
         surge: e.p.effects.surge > 0, grapple: e.grapple, buildy: e.p.buildy,
         invisible: e.p.effects.invisible > 0, poly: e.p.effects.polymorph > 0, scale: e.p.sizeScale, stone: e.p.effects.stoneskin > 0,
-        chill: e.p.effects.chill > 0, worn: e.p.worn || null, look: e.look, tall: e.p.stats.tallness ?? 10, bobber: e.fishing ? { ...pos(e.fishing), bite: e.fishing.bite > 0, hand: e.fishing.hand } : null, voice: e.voiceMode || null, sw: e.sw || { left: 0, right: 0 }, mine: e.mine || null, draw: e.draw || 0,
+        chill: e.p.effects.chill > 0, ult: e.ultOn?.key || null, worn: e.p.worn || null, look: e.look, tall: e.p.stats.tallness ?? 10, bobber: e.fishing ? { ...pos(e.fishing), bite: e.fishing.bite > 0, hand: e.fishing.hand } : null, voice: e.voiceMode || null, sw: e.sw || { left: 0, right: 0 }, mine: e.mine || null, draw: e.draw || 0,
       })),
       mobs: this.mobs.list.map((m) => ({
         id: m.id, type: m.type, ...pos(m.pos), yaw: r2(m.yaw), size: m.size, hurt: m.hurtT > 0,

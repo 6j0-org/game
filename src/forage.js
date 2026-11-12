@@ -12,7 +12,7 @@ tune('Gathering', {
   coalChance: [0.07, 'Coal chance', 'Chance mining stone turns up a lump of coal', P],
   ironChance: [0.04, 'Iron ore chance', 'Chance mining stone turns up iron ore', P],
   copperChance: [0.04, 'Copper ore chance', 'Chance mining stone turns up copper ore', P],
-  silverChance: [0.012, 'Silver ore chance', 'Chance mining stone turns up silver ore', P],
+  silverChance: [0.012, 'Silver ore chance', 'Chance mining stone turns up silver ore', { max: 1, step: 0.001 }], // (a finer step: 0.012 isn't on P's grid)
   sulfurChance: [0.2, 'Sulfur chance', 'Chance mining brimstone (in Hell) turns up sulfur', P],
   yarrowChance: [0.05, 'Yarrow chance', 'Chance cutting grass turns up some yarrow', P],
   mintChance: [0.035, 'Wild mint chance', 'Chance cutting grass turns up some wild mint', P],

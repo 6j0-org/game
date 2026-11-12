@@ -599,6 +599,36 @@ export function buildHeldModel(kind, material) {
   return shape ? part(material, shape) : null;
 }
 
+// The Amalgamation: three other creatures glued together, which three picked from its id (the same for everyone).
+const AMALGAM_PARTS = ['zombie', 'skeleton', 'cow', 'penguin', 'clerk', 'mildew', 'cat', 'dog', 'pomodorino', 'ventilone', 'sahur', 'lavatricio'];
+const PART_HEIGHT = { zombie: 1.85, skeleton: 1.9, cow: 1.4, penguin: 1, clerk: 2.2, mildew: 0.45, cat: 0.6, dog: 0.85, pomodorino: 0.95, ventilone: 1.7, sahur: 2, lavatricio: 2.6 };
+/** Which three creatures Amalgamation `id` is made of. */
+export function amalgamParts(id = 0) {
+  let h = (Math.imul((id | 0) + 0x9e37, 2654435761) >>> 0) || 1;
+  const next = () => { h ^= h << 13; h ^= h >>> 17; h ^= h << 5; return (h >>> 0) / 4294967296; };
+  const pool = [...AMALGAM_PARTS];
+  return [0, 1, 2].map(() => pool.splice(Math.floor(next() * pool.length), 1)[0]);
+}
+function buildAmalgam(mat, id = 0) {
+  const root = new THREE.Group();
+  const [a, b, c] = amalgamParts(id);
+  const legs = [];
+  // Each scaled to about the same height, then [part, x, y, z, roll (z), turn (y)]: one upright in the middle,
+  // one stuck to its left side tipped right over, one jammed into its right shoulder at an angle. They overlap.
+  const placed = [[a, 0, 0, 0, 0, 0], [b, -0.3, 0.55, 0.05, 1.45, 0.5], [c, 0.25, 0.55, -0.05, -0.65, -1.9]];
+  for (const [type, x, y, z, roll, turn] of placed) {
+    const m = BUILDERS[type](mat);
+    const g = new THREE.Group();
+    g.add(m.root);
+    g.scale.setScalar(Math.min(2, 1.15 / PART_HEIGHT[type]));
+    g.position.set(x, y, z);
+    g.rotation.set(0, turn, roll);
+    root.add(g);
+    legs.push(...m.legs);
+  }
+  return { root, legs, arms: [] };
+}
+
 const BUILDERS = {
   cat: buildCat,
   dog: buildDog,
@@ -611,7 +641,7 @@ const BUILDERS = {
   penguin: buildPenguin,
   zombie: buildZombie, skeleton: buildSkeleton, clerk: buildClerk, mildew: buildMildew,
   seedoil: buildSeedOil,
-  sahur: buildSahur, pomodorino: buildPomodorino, lavatricio: buildLavatricio, ventilone: buildVentilone,
+  amalgam: buildAmalgam, sahur: buildSahur, pomodorino: buildPomodorino, lavatricio: buildLavatricio, ventilone: buildVentilone,
 };
 const REACHING = new Set(['zombie', 'clerk']); // arms held out in front
 
@@ -737,7 +767,7 @@ export class MobModels {
       let model = this.models.get(m.id);
       if (!model) {
         const material = withFlashlight(new THREE.MeshBasicMaterial({ vertexColors: true }));
-        model = { extra: [], ...BUILDERS[m.type](material), material };
+        model = { extra: [], ...BUILDERS[m.type](material, m.id), material }; // (the id picks an Amalgamation's parts)
         this.scene.add(model.root);
         this.models.set(m.id, model);
       }

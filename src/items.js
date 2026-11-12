@@ -71,8 +71,8 @@ export const FOOD = {
   // The wizard's
   manapotion: { name: 'Mana Potion', heal: 0, dishes: [], town: 'wizard', drink: true, mana: 40 },
   // The tavern's
-  stew: { name: 'Hearty Stew', heal: 9, dishes: ['bowl'], town: 'tavern' },
-  pie: { name: 'Meat Pie', heal: 8, dishes: ['plate'], town: 'tavern', allergen: 'gluten' },
+  stew: { name: 'Hearty Stew', heal: 9, dishes: ['bowl'], town: 'tavern', meat: true },
+  pie: { name: 'Meat Pie', heal: 8, dishes: ['plate'], town: 'tavern', allergen: 'gluten', meat: true },
   honeycake: { name: 'Honey Cake', heal: 4, dishes: ['plate'], town: 'tavern', allergen: 'gluten' },
   ale: { name: 'Mug of Ale', heal: 2, dishes: ['glass'], town: 'tavern', drink: true, allergen: 'gluten' },
   mead: { name: 'Mug of Mead', heal: 3, dishes: ['glass'], town: 'tavern', drink: true },
@@ -115,15 +115,41 @@ export const TRAITS = {
   lactose: { name: 'Lactose intolerant', icon: '🥛', chance: 0.3 },
   fallHealing: { name: 'Fall healing', icon: '🪂', chance: 0.2 }, // big drops heal you instead of hurting
   lowGravity: { name: 'Gravity resistant', icon: '🎈', chance: 0.15 }, // half gravity, and no fall damage
+  vegan: { name: 'Vegan', icon: '🥦', chance: 0.15, not: 'carnivore' }, // won't eat meat or fish
+  carnivore: { name: 'Carnivore', icon: '🥩', chance: 0.1, not: 'vegan' }, // eats only raw meat (or fish), and it never upsets them
 };
+// `chance` is how likely a trait is to be the one picked (a weight: new characters get one, and every level-up adds
+// another; `not` names a trait it can't go with). A trait can be bought off with attribute points (traitRemoveCost).
+tune('Food & traits', {
+  traitRemoveCost: [3, 'Trait removal cost', 'Attribute points it takes to get rid of a trait (the character sheet, I)', { min: 0, max: 20, step: 1 }],
+});
+
+/** Meat or fish, raw or cooked, or a dish made with it. */
+export const isMeat = (kind) => { const f = FOOD[kind]; return !!f && (!!f.raw || !!f.fish || !!f.meat || !!FOOD[f.cookedFrom]?.raw); };
+/** Why someone with these traits won't eat `kind` (vegan, carnivore), or null. Drinks are always fine. */
+export function dietRefuses(traits, kind) {
+  const f = FOOD[kind];
+  if (!f || f.drink) return null;
+  if (traits?.vegan && isMeat(kind)) return 'You\'re vegan: no meat or fish for you';
+  if (traits?.carnivore && !f.raw) return 'You\'re a carnivore: only raw meat (or fish) will do';
+  return null;
+}
+/** A random trait this character hasn't got (and that goes with the ones it has), or null. Weighted by `chance`. */
+export function newTrait(traits, rand = Math.random) {
+  const ok = Object.entries(TRAITS).filter(([k, t]) => !traits?.[k] && !(t.not && traits?.[t.not]) && t.chance > 0);
+  let pick = rand() * ok.reduce((a, [, t]) => a + t.chance, 0);
+  for (const [k, t] of ok) if ((pick -= t.chance) < 0) return k;
+  return ok.length ? ok[ok.length - 1][0] : null;
+}
 /** Falls of at least this many blocks heal a fall-healing player 1 health per block beyond the first 3. */
 export const fallHealFor = (drop) => (drop >= T.fallHealMin ? Math.floor(drop - T.fallSafe) : 0);
 /** Falls of more than the safe height (a setting) hurt: 1 damage per block beyond it, times the fall damage setting. */
 export const fallDamageFor = (drop, mult = 1) => (drop > T.fallSafe + 0.5 ? Math.floor((drop - T.fallSafe) * mult) : 0);
 
-/** A fresh set of traits for a new life. */
+/** A new character's traits: exactly one, picked at random (weighted by `chance`). */
 export function rollTraits(rand = Math.random) {
-  return Object.fromEntries(Object.entries(TRAITS).map(([k, t]) => [k, rand() < t.chance]));
+  const one = newTrait({}, rand);
+  return Object.fromEntries(Object.keys(TRAITS).map((k) => [k, k === one]));
 }
 
 // Printable tools. `usd` is the price in dollars; you pay the printer in Zcash at the current rate.
@@ -469,7 +495,8 @@ export function inventoryList(player, hand = null) {
     const what = [heal > 0 ? `+${heal} health` : '', def.cure ? 'cures ailments' : '', def.mana ? `+${def.mana} mana` : ''].filter(Boolean).join(', ');
     if (def.ingredient) { list.push({ kind: k, category: 'Ingredient', desc: 'For cooking: see the recipe book (K)' }); continue; }
     const rawNote = def.raw === 'meat' ? ' (raw: cook it at a campfire or range; raw meat can upset your stomach)' : def.raw ? ' (raw: grill it at a campfire or range to heal more)' : '';
-    list.push({ kind: k, category: def.drink ? 'Drink' : 'Food', desc: bad ? `⚠ You're ${TRAITS[def.allergen].name.toLowerCase()}!` : `Click to ${def.drink ? 'drink' : 'eat'}: ${what}${rawNote}` });
+    const diet = dietRefuses(player.traits, k);
+    list.push({ kind: k, category: def.drink ? 'Drink' : 'Food', desc: diet ? `⚠ ${diet}` : bad ? `⚠ You're ${TRAITS[def.allergen].name.toLowerCase()}!` : `Click to ${def.drink ? 'drink' : 'eat'}: ${what}${rawNote}` });
   }
   for (const spell of Object.keys(SPELLS)) {
     if (itemCount(player, scrollKind(spell)) > 0) list.push({ kind: scrollKind(spell), category: 'Scroll', desc: player.spells?.includes(spell) || player.buildy ? `Click to read it: casts ${SPELLS[spell].name} for free (used up)` : `Click to read it: learn ${SPELLS[spell].name} (used up), then cast it with mana` });
@@ -704,7 +731,7 @@ tune('Economy', {
   coinMax: [1, 'Coin value (highest)', 'Most ZEC a coin can be worth', { unit: ' ZEC', step: 0.01 }],
 });
 for (const [k, f] of Object.entries(FOOD)) bindTunable(f, 'heal', 'Food & traits', `heal_${k}`, `${f.name} healing`, 'Health it restores');
-for (const [k, t] of Object.entries(TRAITS)) bindTunable(t, 'chance', 'Food & traits', `chance_${k}`, `${t.name} chance`, 'Chance of getting it at each spawn', P);
+for (const [k, t] of Object.entries(TRAITS)) bindTunable(t, 'chance', 'Food & traits', `chance_${k}`, `${t.name} likelihood`, 'How likely it is to be the trait a new character starts with, or gains at a level-up (compared with the others)', P);
 for (const [k, t] of Object.entries(TOOLS)) {
   if (!t.crafted) bindTunable(t, 'usd', 'Items & tools', `usd_${k}`, `${t.name} price`, t.town ? `Dollars at the town ${t.town} (paid in ZEC)` : 'Dollars to print it (paid in ZEC); CONSUME adds its fee', { unit: '$', step: 1 });
   bindTunable(t, 'damage', 'Items & tools', `melee_${k}`, `${t.name} hit damage`, 'Damage when you hit something with it');

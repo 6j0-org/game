@@ -69,20 +69,30 @@
       position: absolute; left: 50%; top: -20px; transform: translateX(-50%);
       font: 700 calc(13px * var(--fs))/1 ui-monospace, Menlo, Consolas, monospace; color: #b8f56a; text-shadow: 0 1px 3px #000;
     }
-    /* Hotbars: one per hand, just above the health bar (left hand on the left). Hold Q or E and scroll. */
-    .hotbar { position: fixed; bottom: 74px; display: flex; gap: 3px; z-index: 3; }
-    #hotbar-left { right: calc(50% + 6px); }
-    #hotbar-right { left: calc(50% + 6px); }
-    .hotbar .slot { position: relative; width: 36px; height: 36px; border-radius: 7px; background: rgba(10, 14, 26, 0.55); border: 1px solid var(--panel-border); display: grid; place-items: center; }
-    .hotbar .slot canvas { width: 26px; height: 26px; image-rendering: pixelated; pointer-events: none; }
+    /* Hotbars: one per hand, just above the health bar (left hand on the left). Hold Q or E and scroll.
+       --slot is a slot's size (64px, smaller in narrow windows so both fit); --hotbar-gap is half the gap between
+       them, where each one's key (Q left, E right) sits; --above-hotbars is where things that sit over them start. */
+    :root { --hotbar-gap: 44px; --slot: min(64px, calc((50vw - var(--hotbar-gap) - 44px) / 8)); --above-hotbars: calc(74px + var(--slot) + 10px); }
+    .hotbar { position: fixed; bottom: 74px; display: flex; gap: 4px; z-index: 3; }
+    #hotbar-left { right: calc(50% + var(--hotbar-gap)); }
+    #hotbar-right { left: calc(50% + var(--hotbar-gap)); }
+    #hotbar-left::after, #hotbar-right::before {
+      position: absolute; top: 50%; transform: translateY(-50%); width: 20px; height: 20px; border-radius: 5px; pointer-events: none;
+      display: grid; place-items: center; font: 700 calc(12px * var(--fs)) ui-monospace, Menlo, Consolas, monospace;
+      color: #1b1b1b; background: var(--accent); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    }
+    #hotbar-left::after { content: 'Q'; right: -26px; }
+    #hotbar-right::before { content: 'E'; left: -26px; }
+    .hotbar .slot { position: relative; width: var(--slot); height: var(--slot); border-radius: 10px; background: rgba(10, 14, 26, 0.55); border: 1px solid var(--panel-border); display: grid; place-items: center; }
+    .hotbar .slot canvas { width: 72%; height: 72%; image-rendering: pixelated; pointer-events: none; }
     .hotbar .slot.held { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; background: rgba(255, 210, 87, 0.12); }
     .hotbar .slot.out canvas { opacity: 0.3; }
     .hotbar .slot.drop { border-color: #8fe07a; background: rgba(143, 224, 122, 0.2); }
-    .hotbar .slot small { position: absolute; right: 2px; bottom: 0; font: 700 calc(10px * var(--fs)) ui-monospace, Menlo, Consolas, monospace; text-shadow: 0 1px 2px #000; pointer-events: none; }
+    .hotbar .slot small { position: absolute; right: 4px; bottom: 2px; font: 700 calc(14px * var(--fs)) ui-monospace, Menlo, Consolas, monospace; text-shadow: 0 1px 2px #000; pointer-events: none; }
     .hotbar.scrolling .slot { background: rgba(10, 14, 26, 0.8); }
     body.sheet-open .hotbar { display: none; }
     #picker {
-      position: fixed; top: 16px; bottom: 16px; width: calc(50vw - 24px); /* the whole left or right half */
+      position: fixed; top: 16px; bottom: var(--above-hotbars); width: calc(50vw - 24px); /* the left or right half, above the hotbars */
       display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 14px;
       background: rgba(10, 14, 26, 0.88); backdrop-filter: blur(6px); border: 1px solid var(--panel-border);
     }
@@ -301,7 +311,7 @@
     }
     #headache[hidden] { display: none; }
     #ammo {
-      position: fixed; right: 16px; bottom: 16px; margin: 0; padding: 8px 12px; border-radius: 10px; text-align: right;
+      position: fixed; right: 16px; bottom: calc(30px + 36px * var(--fs)); margin: 0; /* (above the ultimate meter) */ padding: 8px 12px; border-radius: 10px; text-align: right;
       background: var(--panel); font: 700 calc(15px * var(--fs))/1.5 ui-monospace, Menlo, Consolas, monospace; color: #ffe9a8; pointer-events: none;
     }
     /* The spell bar: picked spell, mana, and spell effects on you (bottom left). */
@@ -322,10 +332,10 @@
     .voice-dot.quiet { background: #5c6270; }
     .voice-empty { opacity: 0.7; padding: 8px 0; }
     @media (max-width: 480px) { .voice-row { grid-template-columns: 14px 1fr 44px; } .voice-row input[type=range] { grid-column: 1 / -1; } .voice-near { grid-column: 1 / -1; } }
-    #voice-hud { position: fixed; left: 16px; bottom: 74px; padding: 5px 10px; border-radius: 8px; background: var(--panel); font-size: calc(14px * var(--fs)); pointer-events: none; }
+    #voice-hud { position: fixed; left: 16px; bottom: var(--above-hotbars); padding: 5px 10px; border-radius: 8px; background: var(--panel); font-size: calc(14px * var(--fs)); pointer-events: none; }
     #voice-hud[hidden] { display: none; }
     #console {
-      position: fixed; left: 16px; bottom: 96px; width: min(600px, calc(100vw - 32px)); z-index: 20;
+      position: fixed; left: 16px; bottom: var(--above-hotbars); width: min(600px, calc(100vw - 32px)); z-index: 20;
       font: calc(14px * var(--fs)) ui-monospace, Menlo, Consolas, monospace;
     }
     #console[hidden] { display: none; }
@@ -351,13 +361,31 @@
     #spell small { display: block; margin-top: 4px; font-size: calc(12px * var(--fs)); color: #ffe9a8; }
     #spell small.hint { color: #b9b4d8; opacity: 0.8; }
     #ammo[hidden], #surge[hidden], #buildy[hidden], #flap[hidden], #compass[hidden] { display: none; }
-    #compass { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); width: calc(76px * var(--fs)); height: calc(76px * var(--fs)); pointer-events: none; filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5)); }
+    #idbar { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); max-width: calc(100vw - 32px); padding: 4px 14px; border-radius: 999px; pointer-events: none;
+      background: rgba(10, 14, 24, 0.72); border: 1px solid var(--panel-border); color: var(--text); font: 600 calc(14px * var(--fs)) system-ui, sans-serif;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #idbar small { font-weight: 400; opacity: 0.7; margin-left: 6px; }
+    #idbar[hidden], body.sheet-open #idbar { display: none; }
+    /* The ultimate meter (bottom right): it glows when it's ready (H), and pulses while it's going. */
+    #ult { position: fixed; right: 16px; bottom: 16px; width: min(280px, calc(50vw - 40px)); box-sizing: border-box; padding: 7px 12px; border-radius: 10px; pointer-events: none;
+      background: var(--panel); border: 1px solid var(--panel-border); font-size: calc(13px * var(--fs)); color: #ffe9a8; }
+    #ult[hidden] { display: none; }
+    #ult .ult-top { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 5px; white-space: nowrap; }
+    #ult .ult-name { overflow: hidden; text-overflow: ellipsis; font-weight: 700; }
+    #ult .ult-state { font-family: ui-monospace, Menlo, Consolas, monospace; }
+    #ult .ult-bar { height: 7px; border-radius: 4px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
+    #ult .ult-fill { height: 100%; width: 0; background: linear-gradient(90deg, #ff9a3a, #ffd257); transition: width 0.25s; }
+    #ult.ready { border-color: #ffd257; box-shadow: 0 0 14px rgba(255, 210, 87, 0.7); animation: surge 0.7s ease-in-out infinite alternate; }
+    #ult.ready .ult-state { background: #ffd257; color: #1b1b1b; padding: 0 6px; border-radius: 4px; }
+    #ult.on { border-color: #ff9a3a; box-shadow: 0 0 18px rgba(255, 140, 50, 0.8); }
+    body.sheet-open #ult { display: none; }
+    #compass { position: fixed; top: calc(20px + 26px * var(--fs)); left: 50%; transform: translateX(-50%); width: calc(76px * var(--fs)); height: calc(76px * var(--fs)); pointer-events: none; filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5)); }
     #flap {
-      position: fixed; left: 50%; bottom: 106px; transform: translateX(-50%); padding: 5px 12px; border-radius: 10px; pointer-events: none;
+      position: fixed; left: 50%; bottom: calc(var(--above-hotbars) + 32px * var(--fs)); transform: translateX(-50%); padding: 5px 12px; border-radius: 10px; pointer-events: none;
       background: rgba(10, 30, 60, 0.8); border: 1px solid #7fb8ff; color: #cfe6ff; font: 700 calc(14px * var(--fs)) system-ui, sans-serif;
     }
     #buildy {
-      position: fixed; left: 50%; bottom: 74px; transform: translateX(-50%); padding: 5px 12px; border-radius: 10px; pointer-events: none;
+      position: fixed; left: 50%; bottom: var(--above-hotbars); transform: translateX(-50%); padding: 5px 12px; border-radius: 10px; pointer-events: none;
       background: rgba(40, 32, 6, 0.8); border: 1px solid #f2c94c; color: #ffe08a; font: 700 calc(14px * var(--fs)) system-ui, sans-serif;
     }
     #buildy.switching { animation: surge 0.8s ease-in-out infinite alternate; }
@@ -409,7 +437,10 @@
     .verdict { font-weight: 700; }
     .vtragic, .vmeh { color: #ff8a7a; }
     .vgood, .vgreat, .vlegendary { color: #8fe07a; }
+    .trait { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 10px; }
     .trait b { display: block; }
+    .trait small { grid-column: 1 / -1; }
+    .trait-remove { padding: 3px 9px; font-size: calc(12px * var(--fs)); }
     .trait small, .sheet-traits > div, .sheet-conditions > div { font-size: calc(13px * var(--fs)); }
     .trait { margin-bottom: 6px; }
     .sheet-skills { display: grid; grid-template-columns: 1fr; gap: 2px; }
@@ -437,7 +468,7 @@
     #washbar-fill { height: 100%; width: 0; border-radius: 4px; background: #9fe0ff; }
     /* The message log: every notification, bottom right above the ammo. */
     #chat {
-      position: fixed; right: 16px; bottom: 122px; width: min(680px, calc(100vw - 32px)); max-height: min(38vh, 360px); overflow-y: auto; /* (above the hotbars) */
+      position: fixed; right: 16px; bottom: var(--above-hotbars); width: min(680px, calc(100vw - 32px)); max-height: min(38vh, 360px); overflow-y: auto; /* (above the hotbars) */
       padding: 8px 12px; border-radius: 10px; background: rgba(10, 14, 26, 0.5); font-size: calc(16px * var(--fs)); line-height: 1.4;
       text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8); transition: opacity 0.6s; scrollbar-width: thin; overscroll-behavior: contain;
     }
@@ -568,7 +599,13 @@
       width: 100%; height: 100%; box-sizing: border-box; border: none; border-radius: 0; background: transparent;
     }
     #overlay.size-small #identity { display: block; } /* one column in a small screen */
-    #overlay.size-small .tag { display: none; } /* (the key hints are for the main menu) */
+    #overlay.size-small h1 { --logo: min(110px, 14vw); }
+    #overlay.size-small .title-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    #overlay.size-small .title-buttons button { margin: 0; min-width: 0; }
+    #overlay.size-small .title-buttons #play, #overlay.size-small .title-buttons #fullscreen { grid-column: 1 / -1; }
+    #overlay.size-small #identity label { min-width: 0; }
+    #overlay.size-small #identity input { min-width: 0; width: 100%; box-sizing: border-box; }
+    #overlay.signing-in .tag { display: none; } /* (the key hints are for the main menu, not Create Player) */
     .card {
       width: min(420px, calc(100vw - 32px)); padding: 28px; border-radius: 18px; text-align: center;
       background: var(--panel); border: 1px solid var(--panel-border);
@@ -646,18 +683,37 @@
     #client-keys dt { font: 700 calc(13px * var(--fs)) ui-monospace, Menlo, Consolas, monospace; color: var(--accent); white-space: nowrap; }
     #client-keys dd { margin: 0; opacity: 0.9; }
     #settings-note { margin: 0 0 12px; font-size: calc(13px * var(--fs)); opacity: 0.75; }
-    .setting { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 8px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.1); cursor: pointer; }
-    .setting b { color: var(--accent); font: 700 calc(13px * var(--fs)) ui-monospace, Menlo, Consolas, monospace; text-align: right; }
-    .setting input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); }
-    .setting input[type=checkbox] { grid-row: 1; grid-column: 2; justify-self: end; width: 18px; height: 18px; accent-color: var(--accent); }
-    .setting:has(input[type=checkbox]) b { display: none; }
-    .setting small { grid-column: 1 / -1; opacity: 0.65; font-size: calc(12px * var(--fs)); }
+    /* Server settings, like about:config: a search box, Show all, Show only modified, and a scrolling list. */
+    #client section[data-panel="server"] { display: flex; flex-direction: column; gap: 8px; overflow: hidden; padding-right: 0; }
+    .settings-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .settings-toolbar #settings-search { flex: 1 1 260px; width: auto; }
+    .settings-modified { display: flex; align-items: center; gap: 6px; font-size: calc(14px * var(--fs)); white-space: nowrap; cursor: pointer; }
+    .settings-modified input { width: 16px; height: 16px; accent-color: var(--accent); }
+    #settings-all.on { border-color: var(--accent); color: var(--accent); }
+    #settings-list { flex: 1; min-height: 0; overflow-y: auto; border: 1px solid var(--panel-border); border-radius: 10px; }
+    #settings-list:not(:has(.setting:not([hidden]))) { display: none; }
+    .setting { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 2px 10px; padding: 6px 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.07); }
+    .setting:nth-child(even of :not([hidden])) { background: rgba(255, 255, 255, 0.03); }
+    .setting:hover { background: rgba(255, 255, 255, 0.07); }
+    .setting-name { font-size: calc(14px * var(--fs)); min-width: 0; }
+    .setting-name code { margin-left: 8px; font: calc(11px * var(--fs)) ui-monospace, Menlo, Consolas, monospace; opacity: 0.5; }
+    .setting-name em { margin-left: 8px; font-style: normal; font-size: calc(11px * var(--fs)); opacity: 0.5; text-transform: uppercase; letter-spacing: 0.08em; }
+    .setting small { grid-column: 1; opacity: 0.6; font-size: calc(12px * var(--fs)); }
+    .setting-value { grid-row: 1 / span 2; grid-column: 2; display: flex; align-items: center; gap: 4px; font: calc(13px * var(--fs)) ui-monospace, Menlo, Consolas, monospace; }
+    .setting-value input { width: 7em; font: inherit; text-align: right; padding: 4px 6px; border-radius: 6px; color: var(--text); background: rgba(0, 0, 0, 0.3); border: 1px solid var(--panel-border); }
+    .setting-value input:focus { border-color: var(--accent); outline: none; }
+    .setting-value button { min-width: 4.5em; padding: 4px 10px; font: inherit; }
+    .setting-value .unit { opacity: 0.6; min-width: 2em; }
+    .setting.modified .setting-name, .setting.modified .setting-value input, .setting.modified .setting-value button { font-weight: 700; color: var(--accent); }
+    .setting-reset { grid-row: 1 / span 2; grid-column: 3; padding: 2px 8px; visibility: hidden; }
+    .setting.modified .setting-reset { visibility: visible; }
+    #settings-count { font-size: calc(12px * var(--fs)); opacity: 0.6; align-self: center; }
     #settings-search {
       width: 100%; box-sizing: border-box; font: inherit; font-size: calc(15px * var(--fs)); padding: 8px 12px; border-radius: 9px; color: var(--text);
       background: rgba(255, 255, 255, 0.08); border: 1px solid var(--panel-border); outline: none;
     }
     #settings-search:focus { border-color: var(--accent); }
-    #settings-none { padding: 14px 0; opacity: 0.6; }
+    #settings-none { padding: 14px 4px; opacity: 0.7; font-size: calc(14px * var(--fs)); }
     .setting[hidden], .settings-group[hidden] { display: none; }
     .settings-group { margin: 16px 0 2px; font-size: calc(13px * var(--fs)); letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
     .settings-buttons { display: flex; justify-content: space-between; gap: 8px; margin-top: 14px; }
@@ -735,7 +791,7 @@
   <div id="crosshair"></div>
   <div id="scope" hidden><div id="scope-zoom"></div></div>
   <pre id="info" hidden></pre>
-  <div id="hotbar-left" class="hotbar"></div><div id="hotbar-right" class="hotbar"></div>
+  <div id="hotbar-left" class="hotbar" title="Left hand (Q)"></div><div id="hotbar-right" class="hotbar" title="Right hand (E)"></div>
   <div id="xp"><div id="xp-fill"></div><div id="level">0</div></div>
   <div id="health"><div id="health-fill"></div></div>
   <div id="printer" hidden>
@@ -856,11 +912,13 @@
     </div>
   </div>
   <pre id="ammo" hidden></pre>
+  <div id="ult" hidden><div class="ult-top"><span class="ult-name"></span><b class="ult-state"></b></div><div class="ult-bar"><div class="ult-fill"></div></div></div>
   <div id="spell"></div>
   <div id="voice-hud" hidden></div>
   <div id="console" hidden><div id="console-log"></div><input id="console-input" spellcheck="false" autocomplete="off" maxlength="200"></div>
   <div id="buildy" hidden></div>
   <div id="flap" hidden></div>
+  <div id="idbar" hidden></div>
   <svg id="compass" hidden viewBox="-50 -50 100 100" aria-label="Compass">
     <circle r="47" fill="#b08a3a" /><circle r="41" fill="#f2e8cc" /><circle r="41" fill="none" stroke="#8a6a24" stroke-width="1.5" />
     <path d="M0 -41 V-35 M0 41 V35 M-41 0 H-35 M41 0 H35" stroke="#8a6a24" stroke-width="2" /><!-- ticks; the top is where you're facing -->
@@ -933,10 +991,14 @@
       </section>
       <section data-panel="server">
         <p id="settings-note" class="client-note wide"></p>
-        <input id="settings-search" placeholder="Search server settings…" autocomplete="off" spellcheck="false">
+        <div class="settings-toolbar">
+          <input id="settings-search" placeholder="Search setting name, section or description" autocomplete="off" spellcheck="false">
+          <button id="settings-all" type="button">Show all</button>
+          <label class="settings-modified"><input id="settings-modified" type="checkbox"> Show only modified</label>
+        </div>
         <div id="settings-list"></div>
-        <div id="settings-none" hidden>No settings match.</div>
-        <div class="settings-buttons"><button id="settings-reset" type="button">Reset to defaults</button></div>
+        <div id="settings-none" hidden></div>
+        <div class="settings-buttons"><span id="settings-count"></span><button id="settings-reset" type="button">Reset all to defaults</button></div>
       </section>
       <section data-panel="players">
         <p class="client-note wide">Everyone with a Player on this world. You're an Admin: you can make a recovery code for someone who lost their Player (they type it in under Recover Player), rename, kick, ban or delete Players, and make other Players Admins.</p>
@@ -945,7 +1007,7 @@
       </section>
     </div>
   </div>
-  <div id="overlay">
+  <div id="overlay" class="size-small">
     <div class="card">
       <h1 aria-label="Game">
         <span class="t-title" aria-hidden="true">Game</span>

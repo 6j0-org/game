@@ -54,7 +54,7 @@ function createOrRecover({ store, link, say, hadOne }) {
   const panel = document.getElementById('account');
   const screen = document.getElementById('overlay');
   panel.hidden = false;
-  screen.classList.add('size-small'); // Create Player is a small screen (index.html: screen sizes)
+  screen.classList.add('signing-in'); // (no key hints while you make a Player)
   if (!hadOne) say(link.mode === 'single' ? 'Single player: create a Player to start.' : 'Welcome! Create a Player to join this world.');
   const newEl = document.getElementById('account-new');
   const recoverEl = document.getElementById('account-recover');
@@ -71,7 +71,7 @@ function createOrRecover({ store, link, say, hadOne }) {
       if (reply.type !== 'created') { say(reply.reason, true); return; }
       store.set(keyFor(link), JSON.stringify({ uid: reply.uid, key: reply.key })); // signed in from now on
       panel.hidden = true;
-      screen.classList.remove('size-small');
+      screen.classList.remove('signing-in');
       say(`Hello, ${reply.name}!`);
       resolve({ uid: reply.uid, key: reply.key });
     };

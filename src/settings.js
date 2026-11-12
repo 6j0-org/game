@@ -30,6 +30,7 @@ import './forage.js';
 import './npcs.js';
 import './quests.js';
 import './jobs.js';
+import './ultimates.js';
 
 export { T, setTuning };
 
@@ -106,8 +107,8 @@ magic('archstaffPotency', 'Archmage Staff potency', 'Spell damage and durations 
 magic('scrollPotency', 'Scroll potency', 'Spell damage and durations when read from a scroll (scrolls cost no mana)', 0, 5, 0.05, '×');
 magic('spellRange', 'Spell range', 'How far targeted spells (lightning, shrink, enlarge, polymorph, hallucinate) reach, in blocks', 4, 128, 1);
 for (const [k, s] of Object.entries(SPELLS)) {
-  magic(`cost_${k}`, `${s.name} mana cost`, 'Mana it takes to cast', 0, 200, 1);
-  magic(`cooldown_${k}`, `${s.name} cooldown`, 'Seconds before you can cast it again', 0, 30, 0.05, ' s');
+  magic(`cost_${k}`, `${s.name} mana cost`, s.stream ? 'Mana a second while you hold the button' : 'Mana it takes to cast', 0, 200, 1);
+  magic(`cooldown_${k}`, `${s.name} cooldown`, s.stream ? 'Seconds after you let go before you can start again' : 'Seconds before you can cast it again', 0, 30, 0.05, ' s');
 }
 magic('fireballDamage', 'Fireball damage', 'Blast strength of a fireball', 0, 10, 0.1);
 magic('missileDamage', 'Magic Missile damage', 'Damage per missile', 0, 100, 1);
@@ -128,7 +129,7 @@ magic('flightSeconds', 'Flying duration', 'Seconds you can fly (times potency)',
 magic('teleportRange', 'Teleport range', 'How far Teleportation reaches, in blocks', 2, 100, 1);
 magic('breathRange', 'Dragon\'s Breath reach', 'How far the fire reaches, in blocks', 1, 20, 0.5);
 magic('breathArc', 'Dragon\'s Breath width', 'How wide the cone of fire is, in degrees', 5, 180, 5, '°');
-magic('breathDamage', 'Dragon\'s Breath damage', 'Damage to everything in the cone (times potency)', 0, 100, 1);
+magic('breathDamage', 'Dragon\'s Breath damage', 'Damage a second to everything in the cone while you breathe (times potency)', 0, 100, 1);
 magic('blindSeconds', 'Blind duration', 'Seconds a target stays blind (times potency)', 1, 60, 1, ' s');
 magic('blindBlur', 'Blindness blur', 'How blurred a blinded player\'s view is', 0, 40, 1, ' px');
 magic('iceboltSnow', 'Icebolt snow', 'How far around where an icebolt lands gets a layer of snow, in blocks (0: none)', 0, 6, 0.5);
@@ -190,12 +191,13 @@ export function cleanSetting(key, value) {
  * that version that still has the old default gets the new one (game.js runs this once per world; saves keep
  * every value, so without this a new default would never reach an existing world).
  */
-export const SETTINGS_VERSION = 4;
+export const SETTINGS_VERSION = 5;
 const CHANGED_DEFAULTS = [
   [2, 'hp_cow', 10], // cows take ten punches now
   [2, 'rate_shortbow', 1.8], [2, 'rate_longbow', 1], // bows: drawing them takes the time now
   // Raw meat and fish heal less now (cook them for more).
   [3, 'heal_steak', 6], [3, 'heal_liver', 10], [3, 'heal_bird', 2], [3, 'heal_penguin', 6],
+  [5, 'cost_dragon', 30], [5, 'cooldown_dragon', 3], [5, 'breathDamage', 7], // Dragon's Breath is a stream now: mana and damage a second
   [3, 'heal_trout', 4], [3, 'heal_salmon', 6], [3, 'heal_catfish', 5], [3, 'heal_perch', 3], [3, 'heal_koi', 12],
 ];
 /** Settings that were renamed: [settings version that renamed them, old key, new key]; a saved value moves across. */

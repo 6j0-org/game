@@ -53,7 +53,7 @@ Players open `https://…:8000` and accept the browser's warning about the self-
 
 **LibreWolf / hardened Firefox and voice:** privacy settings can stop voice from connecting on a local network. If you see "Couldn't connect voice to …", check `about:config`: `media.peerconnection.enabled` must be `true`, and `media.peerconnection.ice.no_host` must be `false` (it hides your local network address, which is exactly what voice between computers on the same Wi-Fi needs).
 
-**Server settings:** they're the **🛠 Server** tab in **Settings** (the main menu's **Server settings** button opens it straight away). **Every gameplay number in the game is a setting** (about 380, in groups: World, Player, Health & XP, Food & traits, Stats, Monsters & animals, Items & tools, Blocks, Economy, Weapons, Magic): movement and gravity, health and XP, every food, dish, trait and stat effect, every creature's health, speed, damage and spawn odds, every tool and block price, break times, loot chances, coin values, the Zcash market, drones, ammo and so on. Among them, anyone playing can change: monster spawns, animals & birds, monster loot (Zcash and ammo drops), day length, fall damage and PvP; Zcash volatility, CONSUME delivery time and fee, and 3D print time; every gun's damage and fire rate, plus the shotgun's pellets and spread; and all of magic: max mana and regeneration (and how much Big Brain changes them), Wand/Staff potency, spell range, and every spell's mana cost, cooldown, damage, duration and other numbers. Type to search them, like the Q/E picker: names and section names (World, Economy, Weapons) by the start of a word, descriptions anywhere; Tab completes a name and Esc clears the search. Changes apply to everyone at once (everyone gets a message saying who changed what) and are saved with the world. In single player they're your world's settings.
+**Server settings:** they're the **🛠 Server** tab in **Settings** (the main menu's **Server settings** button opens it straight away). **Every gameplay number in the game is a setting** (about 380, in groups: World, Player, Health & XP, Food & traits, Stats, Monsters & animals, Items & tools, Blocks, Economy, Weapons, Magic): movement and gravity, health and XP, every food, dish, trait and stat effect, every creature's health, speed, damage and spawn odds, every tool and block price, break times, loot chances, coin values, the Zcash market, drones, ammo and so on. Among them, anyone playing can change: monster spawns, animals & birds, monster loot (Zcash and ammo drops), day length, fall damage and PvP; Zcash volatility, CONSUME delivery time and fee, and 3D print time; every gun's damage and fire rate, plus the shotgun's pellets and spread; and all of magic: max mana and regeneration (and how much Big Brain changes them), Wand/Staff potency, spell range, and every spell's mana cost, cooldown, damage, duration and other numbers. It works like Firefox's about:config: **search** (names and section names by the start of a word, descriptions and internal keys anywhere; Tab completes a name, Esc clears), or click **Show all**, and tick **Show only modified** to see just what's been changed. The list scrolls; type a number into a row (Enter applies it) or click On/Off, and a changed value shows in bold with a ↺ to put just that one back (**Reset all to defaults** does the lot). Changes apply to everyone at once (everyone gets a message saying who changed what) and are saved with the world. In single player they're your world's settings.
 
 **Trust:** this is built for friends. Each browser moves its own player and the server believes it, checking only basic things such as reach and cooldowns. Don't run it on the open internet.
 
@@ -100,6 +100,7 @@ Three.js r160 is loaded from jsDelivr through the import map in `index.html`, so
 | J | Bestiary: every creature, with a picture and a short description |
 | L | Quest log: your quests, how far along they are, and what they pay |
 | F3 | Toggle the info panel (hidden at first) |
+| H | Ultimate (when the meter is full) |
 | P | Camera: first person (your own body, holding what's in your hands, exactly as others see it), behind you, facing you |
 | Esc | Main menu; in any menu, back one step; in the main menu, back to the game |
 
@@ -107,7 +108,7 @@ Three.js r160 is loaded from jsDelivr through the import map in `index.html`, so
 
 Tap **Q** or **E** to open your inventory as a compact grid of tiles on the left or right of the screen (counts in the corner of each tile; the highlighted item's description shows underneath). Click a tile, use the **arrow keys** to move around the grid, or start typing to filter. **Tab** completes the name, and pressing it again cycles through matches (Shift+Tab goes back). **Enter** picks the highlighted item and **Esc** cancels.
 
-**Hotbars:** each hand has a hotbar of 8 slots, just above the health bar (the left hand's on the left). Drag things from the inventory (tap Q or E) onto either hotbar, drag a slot onto another to swap them, or drag it off the bar to clear it. Then **hold Q (or E) and scroll** to switch that hand to the next thing on its hotbar. Hotbars are saved with your Player.
+**Hotbars:** each hand has a hotbar of 8 big slots, just above the health bar (the left hand's on the left). Drag things from the inventory (tap Q or E) onto either hotbar, drag a slot onto another to swap them, or drag it off the bar to clear it. Then **hold Q (or E) and scroll** to switch that hand to the next thing on its hotbar. Hotbars are saved with your Player.
 
 Each mouse button uses its own hand, and what the hand holds decides what the click does. The exception: **right-clicking an interactive block** (door, trapdoor, bed, Cold Wallet, 3D Printer) always uses the block, and doesn't use whatever is in your right hand. To break one, use your left hand.
 
@@ -134,9 +135,10 @@ A full day lasts 10 minutes. Monsters only spawn **in the dark**: never during t
 - **Knife Penguin**: lives where it's cold (taiga, snow and ice), waddles up to you holding a kitchen knife and uses it. It drops a Raw Penguin. Roasted, it heals, but doesn't let you flap: flight was never an option.
 
 - **Brainrot** (original creatures, with sing-song pseudo-Italian names, and they chant): the **Pomodorino Pugnolino**, a boxing tomato that rushes in with quick jabs; the **Lavatricio Giraffone**, a washing machine on giraffe legs, slow and tough, that kicks hard; and the **Ventilone Fenicotterone**, a one-legged flamingo with a desk fan for a head whose pecks barely hurt but knock you flying.
+- **Amalgamation**: three creatures glued into one (a different three every time: a cow, a penguin and a clerk, say), lurching about on whichever legs agree. Slow, tough, and it hits hard.
 - **Tung Tung Tung Sahur**: a wooden log with a wide stare and a big wooden bat. It only comes out in the last hours of the night (from 03:00 until dawn; a server setting), drumming *tung, tung, tung* as it comes to get you up for sahur, and burns away at sunrise.
 
-Zombies and skeletons burn in direct sunlight. Creatures that walk have to swim across water: they float chest-deep and go at half speed (except knife penguins, which are much faster in water than on land), so a moat slows them down.
+Zombies and skeletons burn in direct sunlight. Every creature has a few ways of getting about (the Bestiary, J, lists them): **terrestrial** (on land), **natatorial** (swims or floats on the water's surface), **aquatic** (dives under water), **aerial** (flies) and **fossorial** (burrows; nobody yet). Creatures go only where they belong: zombies, skeletons, dogs and cows swim across water chest-deep at half speed (so a moat slows them down), but cats, Clerks, Mildew, the Lavatricio Giraffone and the Amalgamation won't go in at all and stop at the shore. Only aquatic creatures go under: the Knife Penguin dives after you (and is much faster in water than on land). Birds never go under water and only land on dry ground, except seagulls, which settle on the water and float.
 
 During the day, **cows** wander in herds on grass. Hit one and it runs (it takes a good ten punches). Hold a **Bucket** (3D Printer or CONSUME) in your left hand and right-click a cow to **milk** it: a glass of milk, and that cow has none left for a minute. Kill one and it drops 1–2 steaks or a liver, and usually a **glass of milk** or some **cheese**. Walk over the drops to pick them up, then eat them to heal. You can only eat when you're hurt, so food isn't wasted. Your food is saved along with the world.
 
@@ -169,7 +171,7 @@ During the day, **cows** wander in herds on grass. Hit one and it runs (it takes
 | Tallness | Height | ±3% reach, and you look taller or shorter (2.5% a point). Over 10, each step under a low ceiling has a 2% chance per point over 10 of bonking your head (1 damage) |
 | Touch Grass | Wisdom, kind of | no effect yet |
 
-**Traits:** every time you spawn (your first join and every respawn) you might be born **gluten intolerant** (25% chance) or **lactose intolerant** (30%), or both. **Falls hurt:** landing on something solid after dropping more than 3 blocks costs 1 health per block beyond 3 (the **Fall damage** server setting scales this, or turns it off). Water landings, ladders, flying, flapping and the grappling hook don't count. You might get **fall healing** (20%): those same drops *heal* you instead, 1 health per block past the first 3, with a pop-up saying "That was weird...". Or you might be **gravity resistant** (15%): you feel half as much gravity, so you jump about twice as high and fall slower, and you never take fall damage. A message tells you, the character sheet (I) lists them, and the Q/E picker warns you about food you can't eat.
+**Traits:** a new character starts with **one trait**, picked at random, and gets **another random one at every level-up**: **gluten intolerant**, **lactose intolerant**, **fall healing**, **gravity resistant**, **vegan** (won't eat meat or fish, raw or cooked, or the tavern's stew and meat pie) or **carnivore** (eats only raw meat and raw fish, which never upsets its stomach; drinks are fine). Nobody is both vegan and a carnivore. Don't like one? **Spend 3 attribute points** (a server setting) to get rid of it: the **Remove** button next to it on the character sheet (I). Food your diet won't allow is refused (nothing is used up), and the Q/E picker warns you. The likelihood of each is a server setting. **Falls hurt:** landing on something solid after dropping more than 3 blocks costs 1 health per block beyond 3 (the **Fall damage** server setting scales this, or turns it off). Water landings, ladders, flying, flapping and the grappling hook don't count. You might get **fall healing** (20%): those same drops *heal* you instead, 1 health per block past the first 3, with a pop-up saying "That was weird...". Or you might be **gravity resistant** (15%): you feel half as much gravity, so you jump about twice as high and fall slower, and you never take fall damage. A message tells you, the character sheet (I) lists them, and the Q/E picker warns you about food you can't eat.
 - **Gluten intolerant + bread:** no healing, and a **20-second headache**: the screen throbs with a red border.
 - **Lactose intolerant + milk or cheese:** no healing, 3 damage straight away and 1 more every 4 seconds, **half speed**, and you **poop everywhere** for 24 seconds. Everyone can see the mess; it clears up after two minutes.
 
@@ -207,6 +209,10 @@ During the day, **cows** wander in herds on grass. Hit one and it runs (it takes
 | Overcharge Cannon | $900 | A slow green orb that zaps everything near its path, then detonates hugely. 30 cells a shot |
 
 **Biomes:** the land is plains, forest, jungle, desert, taiga and swamp, with special zones here and there: the Concrete Jungle, the Abandoned City, Hell, the Backrooms, the **Neon City** (for now built like the Concrete Jungle; the cyberpunk city is coming) and the **Fantasy Town**. Biomes are big: crossing one can take a few minutes. (They used to be ten times smaller. Worlds made before that keep the old, smaller terrain wherever anyone had built (every chunk with player changes, plus one chunk around it), and the new land eases into it over about 32 blocks, so your builds still stand on the ground they were built on. Likewise the Ball Pit is gone from new land, but ball pits where anyone had built stay, and its Foam and Ball Pit Balls blocks are still in the game.)
+
+**Fish** swim in lakes and the sea: little schools of minnows, trout, salmon, perch and catfish (and, rarely, a golden koi) cruise about near you and dart away if you get close. They're just for looking at; catch the real ones with a Fishing Rod.
+
+**What's that?** A label at the top middle of the screen names whatever is under the crosshair, out to 24 blocks: the block, the creature (and what kind), the townsperson (and their trade) or the player.
 
 **Caves:** under natural land there are caves: winding tunnels at different depths, bigger caverns (some deep ones with pools of lava), and now and then a **sinkhole** opening down from the surface. They never reach towns, cities or the other special zones, and always keep a thick roof under seas and lakes. **It's dark down there, day or night:** anything under cover more than a couple of blocks below the ground gets darker the deeper it is, so bring a Flashlight or lava lamps. Monsters come out of the dark in caves at any hour (never within 8 blocks of a lava lamp). Worlds made before caves keep everything you've built exactly as it was: every chunk with an edit, plus one chunk all round it, stays without caves.
 
@@ -286,6 +292,47 @@ Ingredients: cut wild **wheat** (it gives wheat now, not bread), buy **yeast** a
 
 The Pottery Wheel, Kiln and Glazing Table come from the 3D Printer or CONSUME. Every throw, trim and glaze, and every piece fired, is a point in the **Pottery** skill (title: *Potter*). Clay costs, both firing times, the kiln load and the clay chances are Server settings (Pottery).
 
+**Ultimates:** every class (your title: your best skill) has an **ultimate**, a big move like in a fighting game. Every hit you land in combat charges the meter (bottom right), and hits you take charge it a little; after 5 seconds without a hit it slowly drains. When it's full it glows: press **H** to let it go (the announcer shouts its name), which empties it. Some last 10 seconds, some happen at once:
+
+| Class | Ultimate |
+|---|---|
+| Dishwasher | **Silverware Cyclone**: a storm of plates, bowls and cutlery whirls round you, shredding anything close |
+| Sworder, Longsworder, Greatsworder, Stone Spearer | **Titan Blade**: your weapon grows three times bigger and glows: triple melee damage and more reach |
+| Daggerer, Stone Knifer | **Thousand Cuts**: three times as fast, and harder |
+| Puncher | **Flurry of Fists**: four times the damage, three times as fast, a shove like a truck |
+| Sniper Rifler | **Deadeye**: every hit is a headshot, and twice the fire rate |
+| Railgunner | **Overload**: double damage, double fire rate |
+| Pistoler | **Fan the Hammer**: triple fire rate, no ammo used |
+| Shotgunner | **Boomstick**: twice the pellets, triple the kick, no ammo used |
+| Machine Gunner | **Bullet Hose**: dead-on accurate, faster, endless ammo |
+| Rocket Launcherer | **Rocket Rain**: rockets rain on every enemy round you (without digging up the ground) |
+| Shortbower, Longbower, Crossbower | **Arrow Storm**: arrows rain from the sky |
+| Wander, Rune Wander | **Arcane Overflow**: spells cost no mana and need no cooldown |
+| Staffer, Archmage Staffer, Magicer | **Meteor Shower**: fire falls on your enemies |
+| Overcharge Cannoner | **Supernova**: a huge shockwave of light |
+| Axer, Stone Axer | **Timber Tornado**: a whirlwind of spinning axes |
+| Picker, Stone Picker | **Seismic Slam**: everything round you goes flying up |
+| Shoveler, Stone Shoveler | **Grave Digger**: everything round you is stuck in the ground, and hurt |
+| Tiller | **Furrow Quake**: the ground ripples out and bounces everything |
+| Sprayer | **Monsoon**: a swirling downpour that blasts everything away |
+| Weed Torcher | **Inferno**: a ring of fire |
+| Pillower | **Lullaby**: everything nearby nods off (stuck, and blind to you) |
+| Hackysacker | **Footbag Frenzy**: a swarm of hackysacks beaning everything |
+| Flashlighter | **Solar Flare**: everything nearby is blinded, and the undead burn |
+| Compasser | **Fast Travel**: off to your current quest (or home to your bed) |
+| Grappler | **Get Over Here!**: your hook yanks every enemy round you to your feet |
+| Armor | **Unbreakable**: hits barely scratch you |
+| Planter | **Strangling Vines**: vines hold everything nearby fast |
+| Potter | **Kiln Blast**: a blast of heat |
+| Chef | **Feast**: you and everyone near you back to full health |
+| Crafter | **Caltrops**: a ring of spikes: stuck, and sore |
+| Hero | **Rally**: you and the players near you hit harder and shrug off hits |
+| Milker | **Stampede**: phantom cattle trample everything in front of you |
+| Fisher | **Kraken's Catch**: lines drag every enemy round you to your feet, tangled |
+| Adventurer (no class yet) | **Second Wind**: half your health back |
+
+Ultimates hit monsters (not animals or pets), and other players only with PvP on. Every number (charge, drain, how long, how far, how hard, and each ultimate's strength) is a server setting (Ultimates).
+
 **Magic:** there are fifteen spells, and **you start knowing none of them.** Buy a spell's **scroll** from the **Wizard** in the Fantasy Town and read it (click with it): that teaches you the spell for good (the scroll is used up). After that you cast it with mana as below; reading another scroll of a spell you already know casts it for free. **Scroll the mouse wheel** to pick one (the spell bar is bottom left), then click with an **empty hand**, a **Wand** or a **Staff** to cast it. Picking "No spell" makes empty hands punch and mine again. Spells cost **mana**, which refills by itself; your **Big Brain** sets both how much mana you can hold (50 at average, ±5 per point) and how fast it refills (2 a second, ±0.3 per point). A Wand makes your magic **25% stronger** and a two-handed Staff **50% stronger** (damage and durations); both are printable or on CONSUME.
 
 | Spell | Mana | What it does |
@@ -303,7 +350,7 @@ The Pottery Wheel, Kiln and Glazing Table come from the 3D Printer or CONSUME. E
 | 👻 Invisibility | 30 | Monsters and players can't see you for 20 s, until you attack or cast at something |
 | 🕊️ Flying | 35 | You can fly for 20 s: F to take off, Space and C for up and down. A warning comes 3 s before it wears off; then you fall |
 | ✨ Teleportation | 25 | Blink to the spot you're looking at, up to 40 blocks away (onto the block you aim at, or beside it) |
-| 🐉 Dragon's Breath | 30 | A cone of fire 7 blocks long and 50° wide: 7 damage to everything in it (not through walls) |
+| 🐉 Dragon's Breath | 20 a second | **Hold the button** to breathe a stream of fire, a cone 7 blocks long and 50° wide, aimed where you look: 14 damage a second to everything in it (not through walls), for as long as you hold on and your mana lasts. A scroll gives one roar |
 | 🙈 Blind | 25 | A player's view blurs over for 10 s; a monster loses track of everyone for 10 s |
 
 Snow from Icebolts and Blizzards melts after about three minutes, and you can walk through it or build right over it.

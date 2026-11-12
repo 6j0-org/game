@@ -2,7 +2,7 @@
 
 import { T, tune, bindTunable } from './tuning.js';
 import { Body } from './body.js';
-import { FOOD, DISHES, TOOLS, MATERIALS, STARTING_BLOCKS, CURES, blockKind, itemCount, isTwoHanded, spend } from './items.js';
+import { FOOD, DISHES, TOOLS, MATERIALS, STARTING_BLOCKS, CURES, blockKind, itemCount, isTwoHanded, spend, dietRefuses } from './items.js';
 
 import { AVERAGE, statEffects } from './stats.js';
 import { UNFIRED } from './pottery.js';
@@ -65,6 +65,8 @@ export class Player extends Body {
     this.spells = []; // the spells you know (learned by reading their scrolls: spells.js)
     this.hotbars = { left: Array(8).fill(null), right: Array(8).fill(null) }; // what you've put on each hand's hotbar (item kinds)
     this.materials = Object.fromEntries(Object.keys(MATERIALS).map((k) => [k, 0])); // crafting materials (crafting.js)
+    this.ult = 0; // the ultimate meter, 0-100 (ultimates.js; the game owns it)
+    this.ultResist = 1; // damage taken while an ultimate (Unbreakable, Rally) is on
     this.jobs = []; // villagers out working for you (jobs.js); the game owns them, sent in `you`
     this.lastTill = null; // { x, y, z }: where you last tilled (a hired gardener works around it)
     this.quests = emptyQuests(); // jobs for the Fantasy Town's people (quests.js); the game owns them, sent in `you`
@@ -226,10 +228,12 @@ export class Player extends Body {
 
   /**
    * Eats one of `kind` if you have it and aren't at full health.
-   * Returns 'ate' (healed), 'intolerant' (eaten, but you can't digest it: no healing), or false.
+   * Returns 'ate' (healed), 'intolerant' (eaten, but you can't digest it: no healing), 'diet' (you won't eat
+   * it: vegan, carnivore; nothing used up), or false.
    */
   eat(kind) {
     const f = FOOD[kind];
+    if (f && !this.dead && dietRefuses(this.traits, kind)) return 'diet';
     const flap = f?.flap; // a bird is worth eating even when you're full
     const useful = (f?.heal > 0 && this.hp < this.maxHp) || flap || (f?.cure && this.ailing) || (f?.mana && this.mana < maxMana(this.stats, T));
     if (this.dead || !(itemCount(this, kind) > 0) || !useful) return false;
@@ -309,6 +313,7 @@ export class Player extends Body {
     }
     if (this.effects.stoneskin > 0) amount = Math.max(1, Math.round(amount * (1 - this.armor))); // stoneskin
     if (this.armorWorn) amount = Math.max(1, Math.round(amount * (1 - Math.min(100, this.armorWorn.armor) / 100))); // armor you're wearing
+    if (this.ultResist < 1) amount = Math.max(1, Math.round(amount * this.ultResist)); // an ultimate (Unbreakable, Rally)
     this.hp = Math.max(0, this.hp - amount);
     if (source) this.lastHit = { ...source, at: Date.now() };
     this.invuln = T.invulnerable;

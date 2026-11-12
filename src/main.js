@@ -38,6 +38,9 @@ import { Phantoms } from './phantoms.js';
 import { COMMANDS, PLACES, MOB_WORDS, commandOf } from './commands.js';
 import { SoundSystem, blockMaterial } from './audio.js';
 import { Music } from './music.js';
+import { Fishes } from './fishes.js';
+import { ULTIMATES, ultBuff, ultReach } from './ultimates.js';
+import { UltFx } from './ultfx.js';
 import { withFlashlight, setFlashlights, setLamps } from './flashlight.js';
 import { Voice } from './voice.js';
 import { skillName, title as skillTitle, totalPoints, pointsFor } from './skills.js';
@@ -152,6 +155,9 @@ function applyYou(y) {
   player.orders = y.orders || [];
   player.buildy = y.buildy;
   player.quests = y.quests || { active: [], cool: [], done: 0 };
+  player.ult = y.ult ?? 0; // the ultimate meter (ultimates.js)
+  player.ultKey = y.ultKey || 'secondwind';
+  player.ultOn = y.ultOn || null; // { key, t } while one's going
   player.jobs = y.jobs || []; // villagers out working for you (jobs.js)
   player.lastTill = !!y.lastTill;
   buildSwitch = y.buildSwitch;
@@ -312,8 +318,10 @@ function updateLamps(dt, lightMul) {
   setLamps([...sources, ...panelLights].sort((a, b) => a.d - b.d), lightMul);
 }
 const effects = new Effects(scene, atlasCanvas);
+const ultFx = new UltFx(scene, effects); // ultimates' storms, bursts and shimmers (ultfx.js)
 const phantoms = new Phantoms(world); // Hallucinate: monsters only you can see
 const mobModels = new MobModels(scene);
+const fishes = new Fishes(scene, world); // fish swimming in the water (fishes.js: just for looking at)
 mobModels.shadeAt = (m) => world.caveShadeAt(m.pos.x, m.pos.y + (m.height || 1) / 2, m.pos.z); // dark in caves
 
 // ---------- chunk meshes ----------
@@ -456,7 +464,7 @@ function syncSelf(lightMul, dt) {
     // (looking through a scope: no arms or gun in the way)
     dead: player.dead || (first && (player.effects.polymorph > 0 || (scopeLevel > 0 && adsT > 0.5))),
     moved, scale, buildy: player.buildy, poly: player.effects.polymorph > 0,
-    stone: player.effects.stoneskin > 0, surge: player.effects.surge > 0, self: true, firstPerson: first, worn: player.worn || null, look: identity.look, tall: player.stats?.tallness ?? 10, sw: mySwings, mine: myMineHand, draw: Math.max(bowDraw.left, bowDraw.right),
+    stone: player.effects.stoneskin > 0, surge: player.effects.surge > 0, self: true, firstPerson: first, ult: player.ultOn?.key || null, worn: player.worn || null, look: identity.look, tall: player.stats?.tallness ?? 10, sw: mySwings, mine: myMineHand, draw: Math.max(bowDraw.left, bowDraw.right),
   };
   selfAvatar.sync(new Map([[myId, me]]), lightMul, dt);
 }
@@ -913,7 +921,7 @@ function applySnap(s) {
     Object.assign(p, {
       name: d.name, target: at(d), yaw: d.yaw, pitch: d.pitch, crouch: d.crouch, phone: d.phone, hands: d.hands, dead: d.dead,
       surge: d.surge, grapple: d.grapple, buildy: d.buildy, flying: d.flying,
-      invisible: d.invisible, poly: d.poly, scale: d.scale ?? 1, stone: d.stone, chill: d.chill, voice: d.voice ?? null,
+      invisible: d.invisible, poly: d.poly, scale: d.scale ?? 1, stone: d.stone, chill: d.chill, voice: d.voice ?? null, ult: d.ult || null,
       sw: d.sw, mine: d.mine ?? null, draw: d.draw || 0, worn: d.worn || null, look: d.look || null, tall: d.tall ?? 10,
     });
     p.body.height = (d.crouch ? 1.5 : 1.8) * (d.scale ?? 1);
@@ -929,10 +937,10 @@ const MOB_VOICES = {
   bird: ['tweet', 5, 14], munia: ['tweet', 4, 10], finch: ['tweet', 4, 12], nutmunch: ['tweet', 6, 16], seagull: ['caw', 5, 12],
   penguin: ['honk', 4, 10],
   clerk: ['hum', 5, 11], mildew: ['squelch', 3, 8],
-  sahur: ['tung', 3, 7],
+  sahur: ['tung', 3, 7], amalgam: ['groan', 4, 9],
   pomodorino: ['brainrot', 4, 9], lavatricio: ['brainrot', 5, 11], ventilone: ['brainrot', 4, 10],
 };
-const MOB_VOICE_PITCH = { cow: 0.6, cat: 1.6, dog: 1.2, seedoil: 1.3, munia: 1.25, finch: 1.1, nutmunch: 0.7, penguin: 0.9, pomodorino: 1.35, lavatricio: 0.7, ventilone: 1 };
+const MOB_VOICE_PITCH = { cow: 0.6, cat: 1.6, dog: 1.2, seedoil: 1.3, munia: 1.25, finch: 1.1, nutmunch: 0.7, penguin: 0.9, amalgam: 0.65, pomodorino: 1.35, lavatricio: 0.7, ventilone: 1 };
 function mobVoices(dt) {
   for (const m of remote.mobs.values()) {
     const v = MOB_VOICES[m.type];
@@ -1074,6 +1082,13 @@ function onMessage(m) {
       identity.name = m.name;
       nameInput.value = m.name;
       break;
+    case 'ult': { // someone let their ultimate go (game.js `_ult`): the announcer shouts it, and the show
+      const mine = m.by === myId;
+      if (mine || nearMe(m, 40)) { sound.play('surge', { pos: mine ? undefined : m, volume: 0.9 }); }
+      if (mine) { sound.announce(`${m.name.replace(/!$/, '')}!`); shake = Math.max(shake, 0.25); }
+      ultFx.burst(m);
+      break;
+    }
     case 'headshot': // you got one (game.js `_headshot`)
       sound.play('headshot');
       sound.announce('HEADSHOT!');
@@ -1139,7 +1154,12 @@ function applyFx(m) {
     case 'frost': effects.frost(m.x, m.y, m.z); sound.play('frost', { pos }); break;
     case 'bonk': sound.play('thunk', { pos, ref: 4, volume: 1.2 }); if (m.by === myId) shake = Math.max(shake, 0.12); break; // a tall head meets a ceiling
     case 'milk': sound.play('splash', { pos, volume: 0.3, ref: 2 }); effects.sparkle(m.x, m.y, m.z); break; // a cow milked
-    case 'breath': // Dragon's Breath: a roar of fire
+    case 'breath': // Dragon's Breath: a roar of fire (or one puff of a held stream: lighter, quieter)
+      if (m.stream) {
+        effects.breath(m.x, m.y, m.z, { x: m.dx, y: m.dy, z: m.dz }, m.range, m.arc, 40);
+        sound.play('fireball', { pos, ref: 4, p: 0.5 + Math.random() * 0.15, volume: 0.45 });
+        break;
+      }
       effects.breath(m.x, m.y, m.z, { x: m.dx, y: m.dy, z: m.dz }, m.range, m.arc);
       sound.play('fireball', { pos, ref: 5, p: 0.6 });
       sound.play('explode', { pos, volume: 0.35, ref: 4 });
@@ -1230,61 +1250,81 @@ document.getElementById('new-world').addEventListener('click', () => {
 
 // ---------- server settings (Settings > Server) ----------
 // Anyone playing can change these; the game applies them for everyone and tells us (`settings`).
+// Laid out like Firefox's about:config: search (or Show all, or Show only modified), then a scrolling list
+// where each row edits one value; changed ones are bold, with ↺ to put that one back.
 const settingsPanel = (() => {
   const list = document.getElementById('settings-list');
-  const rows = {};
-  const heads = {}; // group -> its heading
-  let group = null;
-  const groups = SETTING_GROUPS;
-  const ordered = Object.entries(SETTINGS).sort(([, a], [, b]) => groups.indexOf(a.group) - groups.indexOf(b.group));
-  for (const [key, s] of ordered) {
-    if (s.group !== group) {
-      group = s.group;
-      const hd = document.createElement('h3');
-      hd.className = 'settings-group';
-      hd.textContent = group;
-      list.append(hd);
-      heads[group] = hd;
-    }
-    const row = document.createElement('label');
-    row.className = 'setting';
-    const name = document.createElement('span');
-    name.className = 'setting-name';
-    name.textContent = s.name;
-    const value = document.createElement('b');
-    const input = document.createElement('input');
-    if (s.type === 'bool') {
-      input.type = 'checkbox';
-      input.addEventListener('change', () => conn.send({ type: 'setting', key, value: input.checked }));
-    } else {
-      Object.assign(input, { type: 'range', min: s.min, max: s.max, step: s.step });
-      input.addEventListener('input', () => { value.textContent = settingText(key, Number(input.value)); });
-      input.addEventListener('change', () => conn.send({ type: 'setting', key, value: Number(input.value) }));
-    }
-    const desc = document.createElement('small');
-    desc.textContent = s.desc;
-    row.append(name, value, input, desc);
-    list.append(row);
-    rows[key] = { input, value, row };
-  }
-  // Search, like the Q/E picker: names (and section names) by the start of a word, then anywhere in a
-  // name or description. Tab completes a name; Esc clears the search, then closes.
-  const search = document.getElementById('settings-search');
   const none = document.getElementById('settings-none');
-  const searchable = ordered.map(([key, s]) => ({ key, name: s.name, category: s.group, desc: s.desc.toLowerCase() }));
+  const count = document.getElementById('settings-count');
+  const search = document.getElementById('settings-search');
+  const allBtn = document.getElementById('settings-all');
+  const modifiedBox = document.getElementById('settings-modified');
+  const rows = {};
+  const groups = SETTING_GROUPS;
+  const ordered = Object.entries(SETTINGS).sort(([, a], [, b]) => groups.indexOf(a.group) - groups.indexOf(b.group) || a.name.localeCompare(b.name));
+  const modified = (key) => settings[key] !== SETTINGS[key].def;
+  for (const [key, s] of ordered) {
+    const row = el('div', 'setting');
+    const name = el('div', 'setting-name', s.name);
+    name.append(el('code', '', key), el('em', '', s.group));
+    const valueBox = el('div', 'setting-value');
+    let input;
+    if (s.type === 'bool') {
+      input = el('button');
+      input.type = 'button';
+      input.addEventListener('click', () => conn.send({ type: 'setting', key, value: !settings[key] }));
+      valueBox.append(input);
+    } else {
+      input = el('input');
+      Object.assign(input, { type: 'number', min: s.min, max: s.max, step: s.step });
+      const commit = () => {
+        const v = Number(input.value);
+        if (input.value === '' || !Number.isFinite(v)) { input.value = settings[key]; return; }
+        if (v !== settings[key]) conn.send({ type: 'setting', key, value: v }); // (the game checks the range and answers with the real value)
+      };
+      input.addEventListener('change', commit);
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { commit(); input.blur(); }
+        else if (e.key === 'Escape') { input.value = settings[key]; input.blur(); e.stopPropagation(); }
+        else e.stopPropagation(); // (typing a number isn't game input)
+      });
+      valueBox.append(input, el('span', 'unit', s.unit || ''));
+    }
+    const reset = el('button', 'setting-reset', '↺');
+    reset.type = 'button';
+    reset.title = `Back to the default (${settingText(key, s.def)})`;
+    reset.addEventListener('click', () => conn.send({ type: 'setting', key, value: s.def }));
+    row.title = s.desc;
+    row.append(name, valueBox, reset, el('small', '', s.desc));
+    list.append(row);
+    rows[key] = { row, input };
+  }
+  // Search, like the Q/E picker: names (and section names) by the start of a word, then anywhere in a name or
+  // description. Nothing shows until you search or ask for all (or only the modified ones).
+  const searchable = ordered.map(([key, s]) => ({ key, name: s.name, category: s.group, desc: `${s.desc} ${key}`.toLowerCase() }));
+  let showAll = false;
   const applySearch = () => {
     const q = search.value.trim().toLowerCase();
-    const hits = new Set(filterItems(searchable, q).map((i) => i.key));
-    if (q) for (const i of searchable) if (i.desc.includes(q)) hits.add(i.key);
-    const shownGroups = new Set();
+    const onlyModified = modifiedBox.checked;
+    let hits = null; // null: every setting
+    if (q) {
+      hits = new Set(filterItems(searchable, q).map((i) => i.key));
+      for (const i of searchable) if (i.desc.includes(q)) hits.add(i.key);
+    } else if (!showAll && !onlyModified) hits = new Set();
+    let shown = 0;
     for (const [key, { row }] of Object.entries(rows)) {
-      row.hidden = !hits.has(key);
-      if (!row.hidden) shownGroups.add(SETTINGS[key].group);
+      row.hidden = (hits && !hits.has(key)) || (onlyModified && !modified(key));
+      if (!row.hidden) shown++;
     }
-    for (const [g, hd] of Object.entries(heads)) hd.hidden = !shownGroups.has(g);
-    none.hidden = hits.size > 0;
+    allBtn.classList.toggle('on', showAll && !q);
+    const changed = Object.keys(SETTINGS).filter(modified).length;
+    count.textContent = `${Object.keys(SETTINGS).length} settings · ${changed} modified${shown ? ` · ${shown} shown` : ''}`;
+    none.hidden = shown > 0;
+    none.textContent = q ? 'No settings match.' : onlyModified ? 'Nothing has been changed from its default.' : 'Search for a setting, or click Show all.';
   };
-  search.addEventListener('input', applySearch);
+  search.addEventListener('input', () => { if (search.value) showAll = false; applySearch(); });
+  allBtn.addEventListener('click', () => { showAll = true; search.value = ''; applySearch(); });
+  modifiedBox.addEventListener('change', applySearch);
   search.addEventListener('keydown', (e) => {
     if (e.key === 'Tab') {
       e.preventDefault();
@@ -1296,22 +1336,23 @@ const settingsPanel = (() => {
       applySearch();
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      const first = Object.values(rows).find((r) => !r.row.hidden);
-      first?.input.focus(); // jump to the first match: arrow keys then change it
+      Object.values(rows).find((r) => !r.row.hidden)?.input.focus(); // jump to the first match
     }
   });
   const update = () => {
-    for (const [key, { input, value }] of Object.entries(rows)) {
-      if (SETTINGS[key].type === 'bool') input.checked = settings[key];
-      else if (document.activeElement !== input) input.value = settings[key];
-      value.textContent = settingText(key, settings[key]);
+    for (const [key, { row, input }] of Object.entries(rows)) {
+      const v = settings[key];
+      if (SETTINGS[key].type === 'bool') { const text = v ? 'On' : 'Off'; if (input.textContent !== text) input.textContent = text; }
+      else if (document.activeElement !== input && Number(input.value) !== v) input.value = v;
+      row.classList.toggle('modified', modified(key));
     }
+    applySearch(); // (Show only modified follows changes)
   };
   /** The Server tab was opened (showTab): fresh values, an empty search, ready to type. */
   const shown = () => {
-    update();
     search.value = '';
-    applySearch();
+    showAll = false;
+    update();
     search.focus();
   };
   document.getElementById('open-settings').addEventListener('click', () => { openClient('server', 'menu'); sound.play('ui'); }); // (a shortcut from the main menu)
@@ -1530,7 +1571,7 @@ const KEYS = [
   ['Scroll wheel', 'Pick a spell (or none, so empty hands punch and mine)'], ['G (hold)', 'Wash any dirty dish (near water)'],
   ['Tab', 'Map'], ['I', 'Character sheet'], ['J', 'Bestiary'], ['L', 'Quest log'], ['U', 'Take off your armor'], ['T', 'Chat: type a message to everyone (it shows in the message log)'],
   ['V', 'Voice settings (multiplayer)'], ['Z / X (hold)', 'Whisper / shout'], ['/', 'Console: /help, /msg, /teleport, /give, /summon, /skip'],
-  ['P', 'Camera: first person, behind you, facing you'], ['F3', 'Info panel'], ['Esc', 'Settings (this)'],
+  ['H', 'Ultimate: let it go when the meter is full (bottom right)'], ['P', 'Camera: first person, behind you, facing you'], ['F3', 'Info panel'], ['Esc', 'Settings (this)'],
 ];
 document.getElementById('client-keys').replaceChildren(...KEYS.flatMap(([k, d]) => [el('dt', '', k), el('dd', '', d)]));
 const PREF_TEXT = {
@@ -2759,6 +2800,8 @@ const TRAIT_EFFECTS = {
   lactose: 'Milk and cheese hurt, slow you down, and… you know.',
   fallHealing: 'Big falls heal you (1 health per block past the first 3) instead of hurting. Nobody knows why.',
   lowGravity: 'You feel half as much gravity: you jump about twice as high, fall slower, and never take fall damage.',
+  vegan: 'You won\'t eat meat or fish, raw or cooked (or the tavern\'s stew and meat pie).',
+  carnivore: 'You only eat raw meat and raw fish, and they never upset your stomach. Drinks are fine.',
 };
 let sheetT = 0;
 function el(tag, cls, text) {
@@ -2823,9 +2866,14 @@ function renderSheet() {
   const traits = el('div', 'sheet-traits');
   const mine = Object.entries(TRAITS).filter(([k]) => player.traits[k]);
   if (!mine.length) traits.append(el('div', '', 'Nothing unusual. Eat anything!'));
+  const removeCost = Math.round(settings.traitRemoveCost);
   for (const [k, t] of mine) {
     const row = el('div', 'trait');
-    row.append(el('b', '', `${t.icon} ${t.name}`), el('small', '', TRAIT_EFFECTS[k]));
+    const drop = el('button', 'trait-remove', `Remove (${removeCost} point${removeCost === 1 ? '' : 's'})`);
+    drop.dataset.trait = k;
+    drop.disabled = !(player.statPoints >= removeCost);
+    drop.title = drop.disabled ? `Needs ${removeCost} attribute points (you get ${settings.statPointsPerLevel} a level)` : `Spend ${removeCost} attribute points to get rid of it`;
+    row.append(el('b', '', `${t.icon} ${t.name}`), drop, el('small', '', TRAIT_EFFECTS[k]));
     traits.append(row);
   }
   const conds = el('div', 'sheet-conditions');
@@ -2836,12 +2884,19 @@ function renderSheet() {
   if (!conds.childElementCount) conds.append(el('div', '', 'Feeling fine.'));
   const next = document.createElement('div');
   next.append(head, vitals, el('h3', '', 'Stats'), stats, el('h3', '', 'Traits'), traits,
-    el('h3', '', 'Conditions'), conds, el('h3', '', 'Skills'), skillsEl, el('p', 'sheet-foot', 'Your stats and traits belong to this character; level-ups give attribute points · drag on the right to turn around · I or Esc to close'));
+    el('h3', '', 'Conditions'), conds, el('h3', '', 'Skills'), skillsEl, el('p', 'sheet-foot', 'Your stats and traits belong to this character; level-ups give attribute points and a new trait · drag on the right to turn around · I or Esc to close'));
   // Only touch the page when something changed (it's redrawn a few times a second for the timers).
   if (next.innerHTML !== card.innerHTML) card.replaceChildren(...next.childNodes);
 }
 // The + buttons: on pointerdown, so a redraw between press and release can't swallow the click.
 sheetEl.querySelector('.sheet-card').addEventListener('pointerdown', (e) => {
+  const trait = e.target.closest?.('button[data-trait]:not(:disabled)')?.dataset.trait;
+  if (trait) { // buying a trait off (game.js `_trait`)
+    e.preventDefault();
+    conn.send({ type: 'trait', op: 'remove', key: trait });
+    sound.play('ui');
+    return;
+  }
   const key = e.target.closest?.('button[data-stat]')?.dataset.stat;
   if (!key || !(player.statPoints > 0)) return;
   e.preventDefault();
@@ -3016,7 +3071,18 @@ document.addEventListener('mouseup', (e) => {
   if (!hand) return;
   buttons[hand] = false;
   if (grappleHand === hand) letGoOfGrapple(); // let go of the button, let go of the rope
+  if (breathHand === hand) stopBreath(); // ...and of Dragon's Breath
 });
+/** The ultimate that's on for you right now (its key), or null. */
+const myUlt = () => player.ultOn?.key || null;
+// Dragon's Breath is held: the game keeps the fire going (and the mana draining) until we say stop.
+let breathHand = null;
+function stopBreath() {
+  if (!breathHand) return;
+  breathHand = null;
+  castReadyAt.dragon = performance.now() + spellCooldown('dragon', settings) * 1000;
+  conn.send({ type: 'breathe' });
+}
 let grappleHand = null;
 function letGoOfGrapple() {
   player.grapple = null;
@@ -3171,16 +3237,23 @@ function castSpell(hand, spell, scroll = false) {
   buttons[hand] = false; // one cast per click (and no mining with this hand)
   const s = SPELLS[spell];
   if (player.effects.polymorph > 0) return;
-  if ((castReadyAt[spell] || 0) > performance.now()) return;
-  const cost = scroll ? 0 : spellCost(spell, settings); // a scroll is free (the game uses it up)
+  const overflow = ultBuff(myUlt(), 'spells', false); // Arcane Overflow: no mana, no cooldown
+  if ((castReadyAt[spell] || 0) > performance.now() && !overflow) return;
+  const cost = scroll || overflow ? 0 : spellCost(spell, settings); // a scroll is free (the game uses it up)
   if ((player.mana ?? 0) < cost) {
     popup(`Not enough mana for ${s.name} (${cost})`);
     sound.play('deny');
     return;
   }
+  const o = camera.position.clone().addScaledVector(dir, 0.6);
+  if (SPELLS[spell].stream && !scroll) { // held: it keeps going until the button comes up (stopBreath)
+    breathHand = hand;
+    conn.send({ type: 'cast', hand, spell, o: { x: o.x, y: o.y, z: o.z }, d: { x: dir.x, y: dir.y, z: dir.z } });
+    swing(isTwoHanded(player.hands[hand]) ? 'right' : hand);
+    return;
+  }
   castReadyAt[spell] = performance.now() + spellCooldown(spell, settings) * 1000;
   player.mana -= cost; // shown right away; the game's number follows in 'you'
-  const o = camera.position.clone().addScaledVector(dir, 0.6);
   conn.send({ type: 'cast', hand, spell, o: { x: o.x, y: o.y, z: o.z }, d: { x: dir.x, y: dir.y, z: dir.z } });
   swing(isTwoHanded(player.hands[hand]) ? 'right' : hand);
 }
@@ -3326,11 +3399,11 @@ function useHand(hand) {
     swing(hand);
     if (attackCooldown > 0) return;
     if (style === 'sweep') {
-      attackCooldown = ATTACK_COOLDOWN;
+      attackCooldown = ATTACK_COOLDOWN * ultBuff(myUlt(), 'cooldown', 1);
       sound.play('swing', { p: 0.8 });
       conn.send({ type: 'attack', hand, o: { x: camera.position.x, y: camera.position.y, z: camera.position.z }, d: { x: dir.x, y: dir.y, z: dir.z } });
     } else if (targetEnt) {
-      attackCooldown = ATTACK_COOLDOWN * settings.chopCooldown;
+      attackCooldown = ATTACK_COOLDOWN * settings.chopCooldown * ultBuff(myUlt(), 'cooldown', 1);
       sound.play('swing', { p: 0.65 });
       conn.send({ type: 'attack', hand, [targetEnt.kind]: targetEnt.id });
     } else sound.play('swing', { p: 0.65 });
@@ -3340,7 +3413,7 @@ function useHand(hand) {
   // block mines it (frame loop).
   swing(hand);
   if (targetEnt && attackCooldown <= 0) {
-    attackCooldown = ATTACK_COOLDOWN;
+    attackCooldown = ATTACK_COOLDOWN * ultBuff(myUlt(), 'cooldown', 1); // (Thousand Cuts, Flurry of Fists)
     sound.play('swing');
     conn.send({ type: 'attack', hand, [targetEnt.kind]: targetEnt.id });
   } else if (!target) sound.play('swing', { volume: 0.6 }); // (a swing at thin air)
@@ -3466,7 +3539,7 @@ window.game = {
   openQuests: () => setQuests(true),
   openPhone: () => setPhone(true),
   setRate: (r) => { if (conn.game) conn.game.rate = r; },
-  phoneApps, voice, sound, music,
+  phoneApps, voice, sound, music, fishes,
 };
 
 /** Everyone holding a flashlight (you first, then the nearest players). */
@@ -3495,6 +3568,35 @@ document.addEventListener('keydown', (e) => {
   if (e.code !== 'KeyB' || e.repeat || !player.locked || menuOpen() || player.dead) return;
   conn.send({ type: 'buildy' });
 });
+// The ultimate meter (bottom right): your class's ultimate, how charged it is, and H when it's ready.
+const ultEl = document.getElementById('ult');
+const ultFill = ultEl.querySelector('.ult-fill');
+const ultName = ultEl.querySelector('.ult-name');
+const ultState = ultEl.querySelector('.ult-state');
+let ultWasReady = false;
+function updateUltHud() {
+  const def = ULTIMATES[player.ultKey] || ULTIMATES.secondwind;
+  const on = player.ultOn;
+  const pct = on ? 100 : Math.max(0, Math.min(100, player.ult || 0));
+  const ready = !on && pct >= 100;
+  const name = `⚡ ${def.name}`;
+  const state = on ? `${on.t}s` : ready ? 'H' : `${Math.floor(pct)}%`;
+  if (ultName.textContent !== name) { ultName.textContent = name; ultEl.title = def.desc; }
+  if (ultState.textContent !== state) ultState.textContent = state;
+  ultFill.style.width = `${pct}%`;
+  ultEl.classList.toggle('ready', ready);
+  ultEl.classList.toggle('on', !!on);
+  ultEl.hidden = player.buildy || (!on && pct <= 0 && !player.ult);
+  if (ready && !ultWasReady) { sound.play('surge', { volume: 0.4 }); popup(`⚡ ${def.name} is ready: press H`, 'level'); }
+  ultWasReady = ready;
+}
+document.addEventListener('keydown', (e) => {
+  if (e.code !== 'KeyH' || e.repeat || !player.locked || menuOpen() || player.dead || e.target.tagName === 'INPUT') return;
+  if (player.ultOn) return;
+  if ((player.ult || 0) < 100) { popup(`Your ultimate isn't charged yet (${Math.floor(player.ult || 0)}%): land some hits`, 'deny'); sound.play('deny'); return; }
+  conn.send({ type: 'ult' });
+});
+
 // The Compass: while it's in either hand, a dial at the top of the screen. Its red needle points north (-z),
 // the gold one to your current quest (the one you took last): the lost thing, the garden, or whoever's waiting.
 const compassEl = document.getElementById('compass');
@@ -3535,6 +3637,31 @@ function updateBuildyHud() {
   if (buildyEl.textContent !== text) buildyEl.textContent = text;
   buildyEl.hidden = !text;
   buildyEl.classList.toggle('switching', !!buildSwitch);
+}
+
+// The identification bar (top middle): the name of whatever's under the crosshair, out to ID_RANGE blocks.
+const ID_RANGE = 24;
+const idBar = document.getElementById('idbar');
+let idKey = '';
+function updateIdBar() {
+  let name = '';
+  let sub = '';
+  if (player.locked && !menuOpen() && !player.dead && !phoneOut) {
+    const block = world.raycast(camera.position, dir, ID_RANGE);
+    const ent = raycastEntities(camera.position, dir, ID_RANGE);
+    if (ent && (!block || ent.t < block.t)) {
+      if (ent.kind === 'mob') {
+        name = BESTIARY.find((b) => b.type === ent.ent.type)?.name || ent.ent.type;
+        sub = BESTIARY.find((b) => b.type === ent.ent.type)?.group || '';
+      } else if (ent.kind === 'player') { if (!ent.ent.invisible) { name = ent.ent.name; sub = 'Player'; } } // (invisible players stay a secret)
+      else if (ent.kind === 'npc') { name = ent.ent.name; sub = ROLE_NAMES[ent.ent.role] || ''; }
+    } else if (block) name = BLOCKS[block.id]?.name || '';
+  }
+  const key = `${name}|${sub}`;
+  if (key === idKey) return; // (only touch the page when it changes)
+  idKey = key;
+  idBar.hidden = !name;
+  idBar.replaceChildren(name, ...(sub ? [el('small', '', sub)] : []));
 }
 
 // Grappling ropes: yours, from your hand, and everyone else's.
@@ -3732,7 +3859,7 @@ function frame(now) {
         const pull = bowDraw[hand];
         bowDraw[hand] = 0;
         if (pull * 100 < settings.bowMinDraw) continue; // barely drawn: you let the string back down
-        gunCooldown[hand] = gun.cooldown;
+        gunCooldown[hand] = gun.cooldown / ultBuff(myUlt(), 'rate', 1);
         if (!player.buildy) player.ammo[gun.ammo] -= gun.per;
         const o = camera.position.clone().addScaledVector(dir, 0.6);
         conn.send({ type: 'fire', hand, aim: aiming, draw: Math.round(pull * 100) / 100, o: { x: o.x, y: o.y, z: o.z }, d: { x: dir.x, y: dir.y, z: dir.z } });
@@ -3743,7 +3870,8 @@ function frame(now) {
     }
     if (!buttons[hand] || !isGun(kind) || gunCooldown[hand] > 0) continue;
     const gun = gunStats(kind, settings);
-    if (ammoCount(player, gun.ammo) < gun.per) {
+    const freeAmmo = ultBuff(myUlt(), 'ammo', false); // (Fan the Hammer, Boomstick, Bullet Hose)
+    if (!freeAmmo && ammoCount(player, gun.ammo) < gun.per) {
       if (emptyT <= 0) {
         emptyT = 0.4;
         sound.play('empty');
@@ -3751,8 +3879,8 @@ function frame(now) {
       }
       continue;
     }
-    gunCooldown[hand] = gun.cooldown;
-    if (!player.buildy) player.ammo[gun.ammo] -= gun.per; // shown right away; the game confirms
+    gunCooldown[hand] = gun.cooldown / ultBuff(myUlt(), 'rate', 1);
+    if (!player.buildy && !freeAmmo) player.ammo[gun.ammo] -= gun.per; // shown right away; the game confirms
     const o = camera.position.clone().addScaledVector(dir, 0.6);
     conn.send({ type: 'fire', hand, aim: aiming, o: { x: o.x, y: o.y, z: o.z }, d: { x: dir.x, y: dir.y, z: dir.z } });
     sound.play(gun.type === 'arrow' ? 'bow' : kind, { volume: 0.8 });
@@ -3815,12 +3943,14 @@ function frame(now) {
   updateChunks();
 
   // What the crosshair points at: a mob or player in front of a block wins.
-  const reach = REACH * statEffects(player.stats).reach; // (Tallness reaches further)
+  const reach = REACH * statEffects(player.stats).reach + ultReach(myUlt()); // (Tallness reaches further; so does a Titan Blade)
   target = world.raycast(camera.position, dir, reach);
   const hit = raycastEntities(camera.position, dir, reach);
   targetEnt = hit && (!target || hit.t < target.t) ? hit : null;
   highlight.visible = !!target && !targetEnt;
   if (target) highlight.position.set(target.x + 0.5, target.y + 0.5, target.z + 0.5);
+  updateIdBar();
+  if (breathHand && (menuOpen() || !player.locked || player.dead || phoneOut)) stopBreath(); // (the mouse was taken away mid-breath)
 
   // Mining: hold the button of a hand that's empty or holds a tool; the tool sets the speed.
   attackCooldown -= realDt;
@@ -3932,6 +4062,8 @@ function frame(now) {
 
   effects.update(simDt, [...remote.fireballs.values()]);
   mobModels.sync({ list: [...remote.mobs.values(), ...phantoms.list], arrows: [...remote.arrows.values()] }, lightMul);
+  fishes.update(realDt, camera.position, lightMul);
+  ultFx.update(realDt, [{ id: myId, pos: player.pos, ult: player.dead ? null : myUlt() }, ...[...remote.players.values()].filter((p) => !p.dead && !p.invisible).map((p) => ({ id: p.id, pos: p.pos, ult: p.ult }))], lightMul);
   mobModels.syncDrops({ list: [...remote.drops.values()] });
   for (const [id, p] of remote.players) p.talking = multiplayer && voice.talking(id); // (the icon over their head)
   avatars.sync(remote.players, lightMul, realDt);
@@ -3969,6 +4101,7 @@ function frame(now) {
   spellFlashT -= realDt;
   updateSpellHud();
   updateBuildyHud();
+  updateUltHud();
   updateCompass();
   updateVault();
   updateLamps(realDt, lightMul);

@@ -21,6 +21,8 @@ function holdPose(kind) {
 const SWING_TIME = 0.3; // seconds for one swing of the arm
 /** How hard each gun kicks your arms up when it fires (radians at the moment of the shot, easing back). The machine gun barely moves, so it stays on target. */
 const RECOIL = { sniper: 0.15, pistol: 0.07, shotgun: 0.16, machinegun: 0.012, rocket: 0.12, railgun: 0.12, overcharge: 0.14 };
+/** The Titan Blade's glow: a see-through gold shell round the (giant) item you hold. */
+const GLOW = new THREE.MeshBasicMaterial({ color: 0xffd257, transparent: true, opacity: 0.35, depthWrite: false, blending: THREE.AdditiveBlending });
 
 const SKIN = [0xe0b48c, 0xc68e62, 0x8d5a3b, 0xf1c9a5, 0xa8714a];
 const HAIR = [0x2b1d14, 0x5a3a20, 0xc9a25a, 0x1a1a1a, 0x8a3b1e];
@@ -284,6 +286,24 @@ export class Avatars {
           m.scale.multiplyScalar(0.8);
           m.rotation.x = -Math.PI / 2;
           a.hold[hand].add(m);
+        }
+      }
+      // Titan Blade (an ultimate, ultimates.js): what you're holding is three times bigger, and glows.
+      const giant = p.ult === 'titan' ? `${a.shown.left}|${a.shown.right}` : '';
+      if (a.giant !== giant) {
+        a.giant = giant;
+        for (const hand of ['left', 'right']) {
+          const h = a.hold[hand];
+          h.scale.setScalar(giant ? 3 : 1);
+          for (const c of [...h.children]) if (c.userData.glow) h.remove(c);
+          if (!giant) continue;
+          for (const c of [...h.children]) {
+            const shell = c.clone();
+            shell.traverse((o) => { if (o.isMesh) o.material = GLOW; });
+            shell.scale.multiplyScalar(1.15);
+            shell.userData.glow = true;
+            h.add(shell);
+          }
         }
       }
 

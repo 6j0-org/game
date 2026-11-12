@@ -3,6 +3,9 @@
 
 import { MOB_TYPES } from './mobs.js';
 
+/** How the guide says where something goes (mobs.js `moves`). */
+export const MOVE_NAMES = { aquatic: 'aquatic (dives)', natatorial: 'natatorial (swims at the surface)', terrestrial: 'terrestrial', aerial: 'aerial (flies)', fossorial: 'fossorial (burrows)' };
+
 /** In the order they're listed. `when` is when and where you'll meet them; `drops` what they leave. */
 export const BESTIARY = [
   { type: 'zombie', name: 'Zombie', group: 'Monster', when: 'Night, anywhere',
@@ -23,6 +26,9 @@ export const BESTIARY = [
   { type: 'mildew', name: 'Mildew', group: 'Monster', when: 'The Backrooms, in the dark rooms, any time',
     drops: 'Sometimes Zcash or ammo',
     desc: 'A patch of damp carpet that got up and left. Low, wide and quick; you hear the squelch before you see it.' },
+  { type: 'amalgam', name: 'Amalgamation', group: 'Monster', when: 'Night, anywhere',
+    drops: 'Sometimes Zcash or ammo',
+    desc: 'Three creatures that got stuck together and decided to make the best of it. Every one is a different three. It lurches about on whichever legs agree, and it is not happy about any of this.' },
   { type: 'sahur', name: 'Tung Tung Tung Sahur', group: 'Brainrot', when: 'Before dawn (from 03:00), anywhere',
     drops: 'Sometimes Zcash or ammo',
     desc: 'A wooden log with stick arms, a wide stare and a big wooden bat. You hear it before you see it: tung, tung, tung. It comes round in the last hours of the night to make sure you\'re up for sahur, and leaves (in flames) at sunrise.' },
@@ -68,6 +74,7 @@ export function bestiaryFacts(type) {
   if (t.passive) facts.push('harmless');
   else if (t.damage) facts.push(`hits for ${t.damage}`);
   if (t.burns) facts.push('burns in sunlight');
-  if (t.flies) facts.push('flies');
+  const where = (t.moves || []).map((w) => MOVE_NAMES[w]).filter(Boolean);
+  if (where.length) facts.push(where.join(', '));
   return facts.join(' · ');
 }

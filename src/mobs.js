@@ -6,6 +6,7 @@
 //   cow         passive; wanders in daytime herds, runs when hit, drops steak or liver
 //   cat, dog    friendly pets that tag along after you; their allergy aura makes you cough and sneeze
 //   pomodorino, lavatricio, ventilone   brainrot: absurd hybrids with sing-song pseudo-Italian names (night, anywhere)
+//   amalgam     the Amalgamation: three creatures glued together into one
 //   sahur       Tung Tung Tung Sahur: a wooden log with a bat; only comes out before dawn (from T.sahurStart)
 
 import { T, tune, bindTunable } from './tuning.js';
@@ -41,36 +42,47 @@ tune('Monsters & animals', {
 });
 
 // `melee` mobs walk straight at you and hit for `damage`. `weight` is the natural night-spawn share.
+// `moves`: where a creature can go (MOVES; more than one for in-between ones):
+//   aquatic      under water            natatorial   on the water's surface (swimming, floating)
+//   terrestrial  on land                aerial       in the air
+//   fossorial    underground (none yet)
+// A walker that isn't natatorial or aquatic stops at the shore; a bird that isn't natatorial keeps above water;
+// only aquatic ones go under (Mobs._think, Mobs._fly).
 export const MOB_TYPES = {
-  zombie: { tag: 'Z', halfW: 0.3, height: 1.85, hp: 20, speed: 2.4, burns: true, melee: true, damage: 3, weight: 0.3 },
-  skeleton: { tag: 'S', halfW: 0.3, height: 1.9, hp: 16, speed: 2.6, burns: true, weight: 0.2 },
+  zombie: { tag: 'Z', moves: ['terrestrial', 'natatorial'], halfW: 0.3, height: 1.85, hp: 20, speed: 2.4, burns: true, melee: true, damage: 3, weight: 0.3 },
+  skeleton: { tag: 'S', moves: ['terrestrial', 'natatorial'], halfW: 0.3, height: 1.9, hp: 16, speed: 2.6, burns: true, weight: 0.2 },
   // Waddles up and stabs. Can't fly; never could.
-  penguin: { tag: 'P', halfW: 0.3, height: 1.0, hp: 14, speed: 2.2, burns: false, melee: true, damage: 3, weight: 0.08, swim: 1.6, habitat: 'cold' }, // (only where it's cold)
+  penguin: { tag: 'P', moves: ['terrestrial', 'natatorial', 'aquatic'], halfW: 0.3, height: 1.0, hp: 14, speed: 2.2, burns: false, melee: true, damage: 3, weight: 0.08, swim: 1.6, habitat: 'cold' }, // (only where it's cold)
   // The Backrooms: they come out of the dark rooms, day or night (Mobs._trySpawnBackrooms).
-  clerk: { tag: 'K', halfW: 0.3, height: 2.2, hp: 26, speed: 1.9, burns: false, melee: true, damage: 5, weight: 0.6, habitat: 'backrooms' },
-  mildew: { tag: 'M', halfW: 0.4, height: 0.45, hp: 10, speed: 4.4, burns: false, melee: true, damage: 2, weight: 0.4, habitat: 'backrooms' },
+  clerk: { tag: 'K', moves: ['terrestrial'], halfW: 0.3, height: 2.2, hp: 26, speed: 1.9, burns: false, melee: true, damage: 5, weight: 0.6, habitat: 'backrooms' },
+  mildew: { tag: 'M', moves: ['terrestrial'], halfW: 0.4, height: 0.45, hp: 10, speed: 4.4, burns: false, melee: true, damage: 2, weight: 0.4, habitat: 'backrooms' },
   // Brainrot (original designs): absurd hybrids with sing-song pseudo-Italian names. Night, anywhere.
   // `knock` is how hard a hit shoves you (default 6).
-  pomodorino: { tag: 'T', halfW: 0.32, height: 0.95, hp: 12, speed: 3.6, burns: false, melee: true, damage: 2, weight: 0.06 }, // a boxing tomato
-  lavatricio: { tag: 'L', halfW: 0.45, height: 2.6, hp: 40, speed: 1.7, burns: false, melee: true, damage: 6, knock: 11, weight: 0.05 }, // a washing machine on giraffe legs
-  ventilone: { tag: 'V', halfW: 0.3, height: 1.7, hp: 14, speed: 3, burns: false, melee: true, damage: 1, knock: 18, weight: 0.06 }, // a flamingo with a desk fan for a head
+  pomodorino: { tag: 'T', moves: ['terrestrial', 'natatorial'], halfW: 0.32, height: 0.95, hp: 12, speed: 3.6, burns: false, melee: true, damage: 2, weight: 0.06 }, // a boxing tomato
+  lavatricio: { tag: 'L', moves: ['terrestrial'], halfW: 0.45, height: 2.6, hp: 40, speed: 1.7, burns: false, melee: true, damage: 6, knock: 11, weight: 0.05 }, // a washing machine on giraffe legs
+  ventilone: { tag: 'V', moves: ['terrestrial', 'natatorial'], halfW: 0.3, height: 1.7, hp: 14, speed: 3, burns: false, melee: true, damage: 1, knock: 18, weight: 0.06 }, // a flamingo with a desk fan for a head
   // Tung Tung Tung Sahur: a log with a face and a bat. `sahur`: only spawns from T.sahurStart until dawn; wood burns at sunrise.
-  sahur: { tag: 'H', halfW: 0.3, height: 2, hp: 30, speed: 2.7, burns: true, melee: true, damage: 4, knock: 9, weight: 0.35, sahur: true },
+  sahur: { tag: 'H', moves: ['terrestrial', 'natatorial'], halfW: 0.3, height: 2, hp: 30, speed: 2.7, burns: true, melee: true, damage: 4, knock: 9, weight: 0.35, sahur: true },
+  // The Amalgamation: three creatures glued into one (which three depends on its id: mobModels.js `amalgamParts`).
+  amalgam: { tag: 'A', moves: ['terrestrial'], halfW: 0.7, height: 1.9, hp: 45, speed: 1.9, burns: false, melee: true, damage: 5, knock: 8, weight: 0.04 },
   // Sized: box is 0.5*size wide and 0.4*size tall, hp and contact damage scale with size.
-  seedoil: { tag: 'O', sized: true, hp: 6, speed: 3.2, burns: false, weight: 0.12 },
-  cow: { tag: 'C', passive: true, halfW: 0.45, height: 1.4, hp: 65, // (at least ten punches, however strong you rolled)
+  seedoil: { tag: 'O', moves: ['terrestrial', 'natatorial'], sized: true, hp: 6, speed: 3.2, burns: false, weight: 0.12 },
+  cow: { tag: 'C', moves: ['terrestrial', 'natatorial'], passive: true, halfW: 0.45, height: 1.4, hp: 65, // (at least ten punches, however strong you rolled)
     speed: 1.6, burns: false, weight: 0 },
   // Pets follow you, stopping at `stay` blocks away once closer than `follow`.
-  cat: { tag: 'c', passive: true, pet: true, halfW: 0.22, height: 0.6, hp: 8, speed: 3.6, burns: false, weight: 0, follow: 4, stay: 3 },
-  dog: { tag: 'd', passive: true, pet: true, halfW: 0.3, height: 0.85, hp: 12, speed: 4.2, burns: false, weight: 0, follow: 2.4, stay: 1.8 },
+  cat: { tag: 'c', moves: ['terrestrial'], passive: true, pet: true, halfW: 0.22, height: 0.6, hp: 8, speed: 3.6, burns: false, weight: 0, follow: 4, stay: 3 },
+  dog: { tag: 'd', moves: ['terrestrial', 'natatorial'], passive: true, pet: true, halfW: 0.3, height: 0.85, hp: 12, speed: 4.2, burns: false, weight: 0, follow: 2.4, stay: 1.8 },
   // Birds fly in small flocks by day, sometimes landing to peck at the ground. Eat one to flap.
   // `flock` is [min, max] birds per flock, `cruise` [min, max] blocks above the ground, `perch` how often they land.
-  bird: { tag: 'b', passive: true, flies: true, halfW: 0.18, height: 0.3, hp: 3, speed: 4.5, burns: false, weight: 0, flock: [2, 4], cruise: [3, 7], perch: 0.2 },
-  munia: { tag: 'u', passive: true, flies: true, halfW: 0.14, height: 0.24, hp: 2, speed: 4.2, burns: false, weight: 0, flock: [4, 7], cruise: [2, 4], perch: 0.35 },
-  finch: { tag: 'f', passive: true, flies: true, halfW: 0.14, height: 0.24, hp: 2, speed: 5.2, burns: false, weight: 0, flock: [2, 5], cruise: [3, 6], perch: 0.2 },
-  seagull: { tag: 'g', passive: true, flies: true, halfW: 0.28, height: 0.4, hp: 6, speed: 5.5, burns: false, weight: 0, flock: [1, 3], cruise: [6, 10], perch: 0.1, thief: true },
-  nutmunch: { tag: 'n', passive: true, flies: true, halfW: 0.22, height: 0.34, hp: 5, speed: 3.4, burns: false, weight: 0, flock: [1, 2], cruise: [2, 4], perch: 0.45 },
+  bird: { tag: 'b', moves: ['aerial', 'terrestrial'], passive: true, flies: true, halfW: 0.18, height: 0.3, hp: 3, speed: 4.5, burns: false, weight: 0, flock: [2, 4], cruise: [3, 7], perch: 0.2 },
+  munia: { tag: 'u', moves: ['aerial', 'terrestrial'], passive: true, flies: true, halfW: 0.14, height: 0.24, hp: 2, speed: 4.2, burns: false, weight: 0, flock: [4, 7], cruise: [2, 4], perch: 0.35 },
+  finch: { tag: 'f', moves: ['aerial', 'terrestrial'], passive: true, flies: true, halfW: 0.14, height: 0.24, hp: 2, speed: 5.2, burns: false, weight: 0, flock: [2, 5], cruise: [3, 6], perch: 0.2 },
+  seagull: { tag: 'g', moves: ['aerial', 'terrestrial', 'natatorial'], passive: true, flies: true, halfW: 0.28, height: 0.4, hp: 6, speed: 5.5, burns: false, weight: 0, flock: [1, 3], cruise: [6, 10], perch: 0.1, thief: true },
+  nutmunch: { tag: 'n', moves: ['aerial', 'terrestrial'], passive: true, flies: true, halfW: 0.22, height: 0.34, hp: 5, speed: 3.4, burns: false, weight: 0, flock: [1, 2], cruise: [2, 4], perch: 0.45 },
 };
+export const MOVES = ['aquatic', 'natatorial', 'terrestrial', 'aerial', 'fossorial'];
+/** Can a mob of `type` go there? ('aquatic', 'natatorial', ...) */
+export const canMove = (type, where) => !!MOB_TYPES[type]?.moves?.includes(where);
 /** Which flying species turn up where: beaches and water get seagulls; elsewhere, the rest. */
 const INLAND_BIRDS = [['bird', 0.3], ['munia', 0.3], ['finch', 0.25], ['nutmunch', 0.15]];
 // Pets are rare: at most one around, and only a small chance to show up every half minute.
@@ -135,6 +147,7 @@ export class Mob extends Body {
     if (this.dead || amount <= 0) return;
     this.hp -= amount;
     if (source) this.lastHit = source; // who hit it last: their skill gets the kill (game.js)
+    this.mobs?.onHit?.(this, amount, source); // (a hit charges the attacker's ultimate: game.js)
     this.hurtT = 0.3;
     this.panicT = 5; // passive mobs run away for a while
     this.wanderT = 0;
@@ -161,6 +174,7 @@ export class Mobs {
 
   spawn(type, x, y, z, size = 1) {
     const mob = new Mob(this.world, type, this.nextId++, size);
+    mob.mobs = this;
     mob.pos = { x, y, z };
     this.list.push(mob);
     return mob;
@@ -411,6 +425,20 @@ export class Mobs {
       }
     }
 
+    // Rooted (an ultimate: Grave Digger, Strangling Vines, Lullaby...): it can't walk anywhere for a while.
+    if (m.rootT > 0) { m.rootT -= dt; wx = 0; wz = 0; }
+
+    // The shore: a walker that can't swim (neither natatorial nor aquatic) won't step into water; it turns back.
+    if ((wx || wz) && !canMove(m.type, 'natatorial') && !canMove(m.type, 'aquatic') && this._waterSurface(m) === null) {
+      const len = Math.hypot(wx, wz);
+      const reach = m.halfW + 0.4;
+      if (this._wetAhead(m.pos.x + (wx / len) * reach, m.pos.y, m.pos.z + (wz / len) * reach)) {
+        wx = 0;
+        wz = 0;
+        if (!sees) { m.yaw += Math.PI * (0.7 + this.rand() * 0.6); m.wanderT = 0.4; } // wandering: off another way
+      }
+    }
+
     const surface = this._waterSurface(m);
     if (surface !== null) { // swimming: slower, and floating chest-deep instead of walking on the water
       const k = t.swim ?? T.mobSwimSpeed;
@@ -421,7 +449,11 @@ export class Mobs {
     let jump = moving && m.hitWall && (m.onGround || surface !== null); // in water, a wall is the shore: climb out
     let jumpSpeed = T.mobJump;
     if (surface !== null) {
-      if (!jump) m.vel.y = Math.max(-2, Math.min(2, (surface - m.height * T.floatDepth - m.pos.y) * 3)); // bob toward floating depth
+      // Aquatic ones dive after someone under the water; everyone else bobs at floating depth (natatorial or not:
+      // one that got knocked in floats, and climbs out at the shore).
+      const dive = canMove(m.type, 'aquatic') && sees && player.pos.y + 0.3 < surface - m.height * T.floatDepth;
+      if (!jump) m.vel.y = dive ? Math.max(-3, Math.min(3, (player.pos.y - m.pos.y) * 2))
+        : Math.max(-2, Math.min(2, (surface - m.height * T.floatDepth - m.pos.y) * 3));
     } else if (m.type === 'seedoil') {
       // Only moves by hopping: sits still on the ground, then leaps in the wished direction.
       m.hopCd -= dt;
@@ -591,6 +623,34 @@ export class Mobs {
     m.scale = m.fitScale(m.scale, scale, (k) => { m.halfW = m.baseHalfW * k; m.height = m.baseHeight * k; });
   }
 
+  /** Is there water where a walker would step at (x, z): at its feet, or a step or two down? */
+  _wetAhead(x, y, z) {
+    const bx = Math.floor(x);
+    const bz = Math.floor(z);
+    const feet = Math.floor(y + 0.1);
+    for (let dy = 0; dy >= -2; dy--) {
+      const id = this.world.getBlock(bx, feet + dy, bz);
+      if (FLUID[id]) return true;
+      if (SOLID[id]) return false; // ground first: dry
+    }
+    return false;
+  }
+
+  /**
+   * Birds never go under: none of them is aquatic. Pops one that's ended up in water back to the surface
+   * (`floating` if it can sit on water, i.e. it's natatorial). Returns the surface's height, or null if dry.
+   */
+  _keepAboveWater(m) {
+    const bx = Math.floor(m.pos.x);
+    const bz = Math.floor(m.pos.z);
+    let y = Math.floor(m.pos.y);
+    if (!FLUID[this.world.getBlock(bx, y, bz)]) return null;
+    while (FLUID[this.world.getBlock(bx, y + 1, bz)] && y < CH) y++;
+    m.pos.y = y + 1;
+    if (m.vel.y < 0) m.vel.y = 0;
+    return y + 1;
+  }
+
   _waterSurface(m) {
     const x = Math.floor(m.pos.x);
     const z = Math.floor(m.pos.z);
@@ -624,6 +684,7 @@ export class Mobs {
         const dy = player.pos.y + 1.4 - m.pos.y;
         m.vel = { x: -Math.sin(m.yaw) * sp, y: Math.max(-5, Math.min(5, dy * 2)), z: -Math.cos(m.yaw) * sp };
         m.move(m.vel.x * dt, m.vel.y * dt, m.vel.z * dt);
+        this._keepAboveWater(m); // (not even for a sandwich)
         m.walkPhase += dt * 12;
         m.walkAmount = 1;
         return;
@@ -639,11 +700,14 @@ export class Mobs {
       m.turn = (this.rand() - 0.5) * 1.2; // radians per second
       m.cruise = t.cruise[0] + this.rand() * (t.cruise[1] - t.cruise[0]);
     }
-    // Height of the ground below.
+    // Height of the ground below (the water's surface counts: they fly over it, never into it).
     let g = Math.floor(m.pos.y);
     const bx = Math.floor(m.pos.x);
     const bz = Math.floor(m.pos.z);
-    while (g > 0 && !SOLID[this.world.getBlock(bx, g - 1, bz)] && m.pos.y - g < 24) g--;
+    while (g > 0 && !SOLID[this.world.getBlock(bx, g - 1, bz)] && !FLUID[this.world.getBlock(bx, g - 1, bz)] && m.pos.y - g < 24) g--;
+    const overWater = !!FLUID[this.world.getBlock(bx, g - 1, bz)];
+    const swims = canMove(m.type, 'natatorial'); // seagulls settle on the water; the others only land on dry ground
+    if (m.perched && overWater && !swims) m.perched = false;
     let speed = t.speed;
     let vy;
     if (m.panicT > 0) {
@@ -659,9 +723,14 @@ export class Mobs {
     }
     m.vel = { x: -Math.sin(m.yaw) * speed, y: vy, z: -Math.cos(m.yaw) * speed };
     m.move(m.vel.x * dt, m.vel.y * dt, m.vel.z * dt);
+    const surface = this._keepAboveWater(m);
+    // Floating: a seagull that's come down on the water sits on it, bobbing (and drifts off again later).
+    const floating = surface !== null && swims && m.perched;
+    if (floating) { m.pos.x -= m.vel.x * dt * 0.8; m.pos.z -= m.vel.z * dt * 0.8; m.pos.y = surface - 0.08 + Math.sin(m.walkPhase * 0.5) * 0.03; }
     if (m.hitWall) { m.yaw += Math.PI * (0.6 + this.rand() * 0.8); m.pos.y += 0.05; } // bonk: turn away
-    m.walkPhase += dt * (m.onGround && m.perched ? 2 : 14); // wingbeats (a slow peck when perched)
-    m.walkAmount = m.onGround && m.perched ? 0 : 1;
+    const sitting = (m.onGround || floating) && m.perched;
+    m.walkPhase += dt * (sitting ? 2 : 14); // wingbeats (a slow peck when perched)
+    m.walkAmount = sitting ? 0 : 1;
   }
 
   _trySpawnHerd(player, room) {
@@ -844,7 +913,7 @@ tune('Monsters & animals', {
   flockChance: [0.5, 'Flock chance', 'Chance a flock of birds comes each attempt', { max: 1, step: 0.05 }],
 });
 const MOB_NAMES = { zombie: 'Zombie', skeleton: 'Skeleton', penguin: 'Knife Penguin', clerk: 'Clerk', mildew: 'Mildew',
-  sahur: 'Tung Tung Tung Sahur', pomodorino: 'Pomodorino Pugnolino', lavatricio: 'Lavatricio Giraffone', ventilone: 'Ventilone Fenicotterone',
+  amalgam: 'Amalgamation', sahur: 'Tung Tung Tung Sahur', pomodorino: 'Pomodorino Pugnolino', lavatricio: 'Lavatricio Giraffone', ventilone: 'Ventilone Fenicotterone',
   seedoil: 'Seed Oil', cow: 'Cow', cat: 'Cat', dog: 'Dog', bird: 'Bluebird', munia: 'Munia', finch: 'Finch', seagull: 'Seagull', nutmunch: 'Nutmunch' };
 for (const [k, t] of Object.entries(MOB_TYPES)) {
   const name = MOB_NAMES[k] || k;

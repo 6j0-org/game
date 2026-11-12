@@ -21,7 +21,7 @@ export const SPELLS = {
   invisibility: { name: 'Invisibility', icon: '👻', cost: 30, cooldown: 3, offensive: false, desc: 'Nobody can see you, monsters included, until you attack.' },
   flight: { name: 'Flying', icon: '🕊️', cost: 35, cooldown: 4, offensive: false, desc: 'You can fly for a while: F to take off (Space up, C down). Mind the landing when it wears off.' },
   teleport: { name: 'Teleportation', icon: '✨', cost: 25, cooldown: 2, offensive: false, desc: 'Blink to the spot you\'re looking at.' },
-  dragon: { name: 'Dragon\'s Breath', icon: '🐉', cost: 30, cooldown: 3, offensive: true, desc: 'Breathe a cone of fire that burns everything in front of you.' },
+  dragon: { name: 'Dragon\'s Breath', icon: '🐉', cost: 20, cooldown: 0.5, offensive: true, stream: true, desc: 'Hold the button to breathe a stream of fire that burns everything in front of you, for as long as your mana lasts. (Its cost is mana a second.)' },
   blind: { name: 'Blind', icon: '🙈', cost: 25, cooldown: 2, offensive: true, desc: 'Your target can\'t see: a player sees only a blur, a monster loses track of everyone.' },
 };
 /** The scroll wheel cycles through these; 'none' means an empty hand punches and mines as usual. */
@@ -54,7 +54,7 @@ export const MAGIC_DEFAULTS = {
   stoneskinSeconds: 30, stoneskinArmor: 40, stoneskinMaxArmor: 75, // % of damage stopped (armor × potency, capped)
   invisibilitySeconds: 20,
   flightSeconds: 20, teleportRange: 40,
-  breathRange: 7, breathArc: 50, breathDamage: 7, // Dragon's Breath: a cone breathRange long and breathArc degrees wide
+  breathRange: 7, breathArc: 50, breathDamage: 14, // Dragon's Breath: a cone breathRange long and breathArc degrees wide, breathDamage a second while you hold it
   blindSeconds: 10, blindBlur: 14, // blindBlur: how blurred a blinded player's view is (pixels)
   ...Object.fromEntries(Object.entries(SPELLS).flatMap(([k, s]) => [[`cost_${k}`, s.cost], [`cooldown_${k}`, s.cooldown]])),
 };
