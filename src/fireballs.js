@@ -22,7 +22,7 @@ export class Fireballs {
   }
 
   /**
-   * opts: kind ('fireball' | 'rocket' | 'orb' | 'missile' | 'icebolt' | 'arrow'), speed, gravity, radius (blast), mult (damage), lifetime.
+   * opts: kind ('fireball' | 'rocket' | 'orb' | 'missile' | 'icebolt' | 'arrow' | 'homing' | 'drunk' | 'nuke'), speed, gravity, radius (blast), mult (damage), lifetime.
    */
   shoot(origin, dir, owner = null, opts = {}) {
     const speed = opts.speed ?? T.fireballSpeed;
@@ -53,6 +53,10 @@ export class Fireballs {
     const events = [];
     this.list = this.list.filter((fb) => {
       fb.age += dt;
+      if (fb.detonateNow) { // (a guided nuke's rider clicked: game.js `_detonateMine`)
+        events.push({ type: 'explode', fireball: fb, ...fb.pos });
+        return false;
+      }
       fb.vel.y -= fb.gravity * dt;
       const dist = Math.hypot(fb.vel.x, fb.vel.y, fb.vel.z) * dt;
       const steps = Math.max(1, Math.ceil(dist / STEP));

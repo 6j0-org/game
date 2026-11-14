@@ -6,7 +6,7 @@ import { Body } from './body.js';
 import { SOLID, LEAFY, PLANT, BLOCKS, HOTBAR, PRINTER, COLD_WALLET, BED, PLANKS, GLASS, BRICK, LAVA_LAMP, DOOR,
   STAIRS_PLANKS, STAIRS_STONE, SLAB_PLANKS, SLAB_STONE, FENCE, TRAPDOOR, LADDER, BLADES, isCrop,
   POTTERY_WHEEL, KILN, GLAZING_TABLE, CLAY_BLOCKS, isPottery, isLuminary } from './blocks.js';
-import { GUNS, GRAPPLE, AMMO, grantAmmo } from './weapons.js';
+import { GUNS, GRAPPLE, AMMO, GRENADE_KINDS, grantAmmo } from './weapons.js';
 import { SPELLS } from './spells.js';
 import { FISH } from './fishing.js';
 import { FOUND_WHERE } from './forage.js';
@@ -159,6 +159,7 @@ export const TOOLS = {
   axe: { name: 'Axe', usd: 40, desc: 'Chops logs and planks 5x faster', damage: 8, knock: 8 },
   sword: { name: 'Sword', usd: 60, desc: '12 damage per hit, and cuts leaves fast', damage: 12, knock: 9 },
   pillow: { name: 'Couch Pillow', usd: 20, desc: 'PvP: only 1 damage, but sends them flying', damage: 1, knock: 22 },
+  detonator: { name: 'Detonator', usd: 25, desc: 'Click to set off every Radio Charge you have out (throw them, or fire them from the Grenade Launcher: they stick where they land)', damage: 1, knock: 2 },
   hackysack: { name: 'Hackysack', usd: 10, desc: 'PvP: throw it, it bounces, pick it back up', damage: 1, knock: 4, throwDamage: 3, throwKnock: 10 },
   flashlight: { name: 'Flashlight', usd: 25, desc: 'Lights up the dark in front of you while you hold it', damage: 2, knock: 3 },
   compass: { name: 'Compass', usd: 20, desc: 'Hold it: the red needle points north, the gold one to your current quest', damage: 1, knock: 2 },
@@ -236,7 +237,7 @@ export const printUsd = (kind) => (kind in TOOLS ? TOOLS[kind].usd : ammoOf(kind
 // Everything can be ordered from your phone. It's charged like a print (dollars, paid in ZEC at the
 // rate of the moment) plus a delivery fee, and a drone brings it after the delivery time (both are settings).
 const FOOD_USD = { steak: 6, liver: 5, bread: 3, milk: 3, cheese: 4, bird: 8, penguin: 7, yeast: 2, butter: 3 };
-const AMMO_USD = { bullets: 8, shells: 8, rockets: 20, slugs: 15, cells: 12, arrows: 6, rifle: 15 };
+const AMMO_USD = { bullets: 8, shells: 8, rockets: 20, slugs: 15, cells: 12, arrows: 6, rifle: 15, frag: 16, sticky: 20, incendiary: 20, flashbang: 14, mine: 24, charge: 24, flares: 6, missiles: 40, minirockets: 30, nukes: 2000 };
 const RAW_BLOCKS = { usd: 2, n: 8 }; // natural blocks you'd otherwise mine
 const SEEDS = { usd: 3, n: 4 }; // a packet of seeds on CONSUME
 export const ammoKind = (type) => `ammo:${type}`;
@@ -415,7 +416,7 @@ export function rollCoinLoot(rand = Math.random, mult = 1) {
 export const blockKind = (id) => `block:${id}`;
 export const blockIdOf = (kind) => (typeof kind === 'string' && kind.startsWith('block:') ? Number(kind.slice(6)) : null);
 export const isMiningKind = (kind) =>
-  kind === 'empty' || (kind in TOOLS && kind !== 'hackysack' && !TOOLS[kind].gun && !TOOLS[kind].grapple && !TOOLS[kind].magic && !TOOLS[kind].armor && !TOOLS[kind].garden && !TOOLS[kind].fishing);
+  kind === 'empty' || (kind in TOOLS && kind !== 'hackysack' && !TOOLS[kind].gun && !TOOLS[kind].grapple && !TOOLS[kind].magic && !TOOLS[kind].armor && !TOOLS[kind].garden && !TOOLS[kind].fishing && kind !== 'detonator');
 export const isGun = (kind) => !!TOOLS[kind]?.gun;
 /** Two-handed items fill both hands at once. */
 export const isTwoHanded = (kind) => !!TOOLS[kind]?.twoHanded;
@@ -484,8 +485,8 @@ export function inventoryList(player, hand = null) {
   for (const [k, def] of Object.entries(TOOLS)) {
     if (!(itemCount(player, k) > 0)) continue;
     const gun = GUNS[k];
-    const rounds = ammoCount(player, gun?.ammo);
-    const desc = gun ? `${def.desc} (${rounds === Infinity ? '∞' : rounds} ${AMMO[gun.ammo].name.toLowerCase()})` : def.desc;
+    const rounds = gun?.anyGrenade ? GRENADE_KINDS.reduce((n, g) => n + ammoCount(player, g), 0) : ammoCount(player, gun?.ammo); // (the launcher takes any grenade)
+    const desc = gun ? `${def.desc} (${rounds === Infinity ? '∞' : rounds} ${gun.anyGrenade ? 'grenades' : AMMO[gun.ammo].name.toLowerCase()})` : def.desc;
     list.push({ kind: k, category: gun || def.blade ? 'Weapon' : def.magic ? 'Magic' : def.armor ? 'Armor' : def.garden ? 'Garden' : def.fishing ? 'Fishing' : 'Tool', desc });
   }
   for (const [k, def] of Object.entries(FOOD)) {
@@ -502,7 +503,7 @@ export function inventoryList(player, hand = null) {
     if (itemCount(player, scrollKind(spell)) > 0) list.push({ kind: scrollKind(spell), category: 'Scroll', desc: player.spells?.includes(spell) || player.buildy ? `Click to read it: casts ${SPELLS[spell].name} for free (used up)` : `Click to read it: learn ${SPELLS[spell].name} (used up), then cast it with mana` });
   }
   for (const k of Object.keys(AMMO)) { // ammo: hold it in your other hand to reload a gun (R)
-    if (itemCount(player, ammoKind(k)) > 0) list.push({ kind: ammoKind(k), category: 'Ammo', desc: k === 'arrows' ? 'Your bows shoot these' : 'Reloading: hold a gun, press R, then click with this in your other hand' });
+    if (itemCount(player, ammoKind(k)) > 0) list.push({ kind: ammoKind(k), category: 'Ammo', desc: k === 'arrows' ? 'Your bows shoot these' : AMMO[k].grenade ? `Click to throw one${k === 'charge' ? ' (it sticks; set it off with the Detonator)' : k === 'mine' ? ' (it sticks where it lands and arms itself)' : ''}, or load it into the Grenade Launcher (R)` : 'Reloading: hold a gun, press R, then click with this in your other hand' });
   }
   for (const [k, def] of Object.entries(MATERIALS)) {
     if (itemCount(player, k) > 0) list.push({ kind: k, category: 'Material', desc: def.found ? def.desc : `${def.desc} (crafting: R)` });

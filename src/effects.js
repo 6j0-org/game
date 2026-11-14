@@ -29,6 +29,10 @@ const SNOW = new THREE.Color(0xf4faff);
 const WATER_DROP = new THREE.Color(0x7fc4ff);
 const DIRT_BROWN = new THREE.Color(0x7a5236);
 const UP = new THREE.Vector3(0, 1, 0);
+const FLARE_RED = new THREE.Color(0xff4a2a);
+const FLARE_PINK = new THREE.Color(0xffb0a0);
+const WHITE = new THREE.Color(0xffffff);
+const TRACER_SPEED = 260; // blocks per second (slow enough to see it fly)
 
 /** Average colour of each atlas tile, used to tint debris. */
 function tileColors(atlasCanvas) {
@@ -99,6 +103,120 @@ export class Effects {
     this.iceMat = new THREE.MeshBasicMaterial({ color: 0x9fdcff, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending }); // icebolt
     this.iceCore = new THREE.MeshBasicMaterial({ color: 0xe8f8ff });
     this.flashGeo = new THREE.SphereGeometry(1, 16, 12);
+    this.homingBody = new THREE.MeshBasicMaterial({ color: 0xe8ecf0 });
+    this.nukeBody = new THREE.MeshBasicMaterial({ color: 0x3a3e46 });
+    this.nukeBand = new THREE.MeshBasicMaterial({ color: 0xf2c230 });
+    this.tracerMat = new THREE.MeshBasicMaterial({ color: 0xff8a3a, transparent: true, opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending });
+    this.tracerGeo = new THREE.BoxGeometry(0.07, 0.07, 1.8);
+    this.tracers = []; // { mesh, from, dir, len, t, light }
+    this.clouds = []; // the nuke's mushroom clouds and shockwaves: { obj, age, life, grow }
+    // Brief lights (main.js puts them with the lamps): { pos, color, base, range, life, max }
+    this.lights = [];
+  }
+
+  /** A light for a moment: it fades out over `life` seconds. `color` is a THREE.Vector3 (can go above 1). */
+  light(x, y, z, color, range, life) {
+    const base = color.clone();
+    const l = { pos: new THREE.Vector3(x, y, z), color: base.clone(), base, range, life, max: life };
+    this.lights.push(l);
+    return l;
+  }
+
+  /** A machine-gun tracer: a glowing streak racing from `o` to `e`, lighting things as it passes. */
+  tracer(o, e) {
+    const from = new THREE.Vector3(o.x, o.y, o.z);
+    const to = new THREE.Vector3(e.x, e.y, e.z);
+    const len = from.distanceTo(to);
+    if (len < 0.5) return;
+    const dir = to.clone().sub(from).normalize();
+    if (len < 4) return; // (too close to see fly)
+    from.addScaledVector(dir, 2.5); // (it shows from a little way out: right at the muzzle it would fill your view)
+    const mesh = new THREE.Mesh(this.tracerGeo, this.tracerMat);
+    mesh.position.copy(from);
+    mesh.lookAt(to);
+    this.scene.add(mesh);
+    const light = this.light(o.x, o.y, o.z, new THREE.Vector3(1.4, 0.5, 0.2), 5, len / TRACER_SPEED + 0.05);
+    this.tracers.push({ mesh, from, dir, len: len - 2.5, t: 0, light });
+    this.beam(from, e, 0xff9a5a, 0.015, 0.18, 0.35); // (a faint line left behind, from where it shows)
+  }
+
+  /** A burning flare: red sparks and smoke (under its parachute, they drift). */
+  flare(x, y, z, chute) {
+    if (Math.random() < 0.7) this._emit(KIND.FIRE, x, y, z, (Math.random() - 0.5) * 2, chute ? -0.5 - Math.random() : (Math.random() - 0.5), (Math.random() - 0.5) * 2, Math.random() < 0.5 ? FLARE_RED : FLARE_PINK, 0.45);
+    if (Math.random() < 0.15) this._emit(KIND.SMOKE, x, y, z, (Math.random() - 0.5) * 0.4, 0.4, (Math.random() - 0.5) * 0.4, SMOKE_GREY, 2.5);
+  }
+
+  /** An incendiary's fire on the ground: flames over a disc of radius `r`. */
+  fire(x, y, z, r, dt) {
+    const n = Math.min(12, r * r * 8 * dt * 10);
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const d = Math.sqrt(Math.random()) * r;
+      this._emit(KIND.FIRE, x + Math.cos(a) * d, y + Math.random() * 0.3, z + Math.sin(a) * d, (Math.random() - 0.5) * 0.4, 1.5 + Math.random() * 2, (Math.random() - 0.5) * 0.4, Math.random() < 0.5 ? FIRE_HOT : FIRE_MID, 0.6);
+    }
+    if (Math.random() < dt * 6) this._emit(KIND.SMOKE, x + (Math.random() - 0.5) * r, y + 1, z + (Math.random() - 0.5) * r, 0, 1.2, 0, SMOKE, 3);
+  }
+
+  /** An incendiary bursting: a ring of flame thrown out over the ground. */
+  fireBurst(x, y, z, r) {
+    for (let i = 0; i < 90; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = r * (1.5 + Math.random() * 1.5);
+      this._emit(KIND.FIRE, x, y + 0.3, z, Math.cos(a) * sp, 1 + Math.random() * 3, Math.sin(a) * sp, Math.random() < 0.5 ? FIRE_HOT : FIRE_MID, 0.7);
+    }
+    this.light(x, y + 1, z, new THREE.Vector3(2, 1, 0.3), r * 4, 0.8);
+  }
+
+  /** A flashbang: a blinding white pop and a puff of smoke. */
+  flashbang(x, y, z) {
+    const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending });
+    const mesh = new THREE.Mesh(this.flashGeo, mat);
+    mesh.position.set(x, y, z);
+    this.scene.add(mesh);
+    this.flashes.push({ mesh, age: 0, duration: 0.25, radius: 3 });
+    this._burst(KIND.SMOKE, x, y, z, 40, 2.5, SMOKE_GREY, 2.5, 0.5);
+    this._burst(KIND.FIRE, x, y, z, 30, 6, WHITE, 0.15, 0.3);
+    this.light(x, y + 0.5, z, new THREE.Vector3(3, 3, 3), 16, 0.35);
+  }
+
+  /** The nuke: a huge flash, a fireball, a mushroom cloud that rises and spreads, and a shockwave ring. */
+  nuke(x, y, z, r) {
+    const mat = new THREE.MeshBasicMaterial({ color: 0xfff6d8, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending });
+    const flash = new THREE.Mesh(this.flashGeo, mat);
+    flash.position.set(x, y, z);
+    this.scene.add(flash);
+    this.flashes.push({ mesh: flash, age: 0, duration: 1.4, radius: r * 3 });
+    this._burst(KIND.FIRE, x, y, z, 700, r * 4, FIRE_HOT, 1.4, r);
+    this._burst(KIND.SMOKE, x, y, z, 300, r * 1.5, SMOKE, 4, r);
+    // The cloud: a stem and a cap of soft spheres that rise and swell while they fade.
+    const cloud = new THREE.Group();
+    cloud.position.set(x, y, z);
+    const puffMat = (c) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.85, depthWrite: false });
+    const stemMat = puffMat(0x8a7a6a);
+    const capMat = puffMat(0xc89a6a);
+    for (let i = 0; i < 6; i++) { const m = new THREE.Mesh(this.flashGeo, stemMat); m.scale.setScalar(r * (0.45 - i * 0.03)); m.position.y = i * r * 0.55; cloud.add(m); }
+    for (let i = 0; i < 9; i++) {
+      const a = (i / 9) * Math.PI * 2;
+      const m = new THREE.Mesh(this.flashGeo, capMat);
+      m.scale.set(r * 0.8, r * 0.55, r * 0.8);
+      m.position.set(Math.cos(a) * r * 0.9, r * 3.4, Math.sin(a) * r * 0.9);
+      cloud.add(m);
+    }
+    const top = new THREE.Mesh(this.flashGeo, capMat);
+    top.scale.set(r * 1.3, r * 0.8, r * 1.3);
+    top.position.y = r * 3.7;
+    cloud.add(top);
+    cloud.scale.setScalar(0.2);
+    this.scene.add(cloud);
+    this.clouds.push({ obj: cloud, age: 0, life: 14, grow: 1, mats: [stemMat, capMat] });
+    // The shockwave: a flat ring racing outwards along the ground.
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0xfff0d0, transparent: true, opacity: 0.7, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.85, 1, 64), ringMat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(x, y + 0.5, z);
+    this.scene.add(ring);
+    this.clouds.push({ obj: ring, age: 0, life: 2.2, ring: r * 12, mats: [ringMat] });
+    this.light(x, y + r, z, new THREE.Vector3(4, 2.6, 1.2), 90, 4);
   }
 
   // ---------- particles ----------
@@ -153,6 +271,13 @@ export class Effects {
       const nose = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 0.12), this.rocketNose);
       nose.position.z = 0.3; // lookAt points +z along the flight
       group.add(body, nose);
+    } else if (fb.kind === 'homing' || fb.kind === 'drunk' || fb.kind === 'nuke') { // missiles: a body and a nose, pointing +z
+      const big = fb.kind === 'nuke' ? 2.2 : fb.kind === 'drunk' ? 0.6 : 1;
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.13 * big, 0.13 * big, 0.55 * big), fb.kind === 'nuke' ? this.nukeBody : this.homingBody);
+      const nose = new THREE.Mesh(new THREE.BoxGeometry(0.1 * big, 0.1 * big, 0.14 * big), fb.kind === 'nuke' ? this.nukeBand : this.rocketNose);
+      nose.position.z = 0.33 * big;
+      group.add(body, nose);
+      if (fb.kind === 'nuke') { const band = new THREE.Mesh(new THREE.BoxGeometry(0.14 * big, 0.14 * big, 0.08 * big), this.nukeBand); band.position.z = -0.1 * big; group.add(band); }
     } else if (fb.kind === 'missile') {
       const core = new THREE.Mesh(this.coreGeo, this.missileCore);
       core.scale.setScalar(0.6);
@@ -188,6 +313,7 @@ export class Effects {
     }
     group.userData.kind = fb.kind;
     group.userData.last = { ...fb.pos };
+    group.userData.start = { ...fb.pos }; // (no smoke trail for its first few blocks: it would be right in the shooter's face)
     group.position.set(fb.pos.x, fb.pos.y, fb.pos.z);
     this.scene.add(group);
     this.fireballMeshes.set(fb.id, group);
@@ -228,6 +354,7 @@ export class Effects {
     mesh.position.set(x, y, z);
     this.scene.add(mesh);
     this.flashes.push({ mesh, age: 0, duration: 0.3, radius: radius * 1.5 });
+    this.light(x, y, z, new THREE.Vector3(2, 1.1, 0.4), radius * 5, 0.5);
   }
 
   fizzle(x, y, z) {
@@ -461,8 +588,11 @@ export class Effects {
         }
       } else if (kind === 'arrow') {
         if (moved > 1e-3) g.lookAt(fb.pos.x * 2 - last.x, fb.pos.y * 2 - last.y, fb.pos.z * 2 - last.z);
-      } else if (kind === 'rocket') {
+      } else if (kind === 'rocket' || kind === 'homing' || kind === 'drunk' || kind === 'nuke') {
         if (moved > 1e-3) g.lookAt(fb.pos.x * 2 - last.x, fb.pos.y * 2 - last.y, fb.pos.z * 2 - last.z);
+        const st = g.userData.start;
+        const away = Math.hypot(fb.pos.x - st.x, fb.pos.y - st.y, fb.pos.z - st.z);
+        if (away < 3 || (kind === 'drunk' && Math.random() < 0.5)) { g.userData.last = { ...fb.pos }; continue; } // (eight drunk rockets: half the smoke each)
         this._emit(KIND.SMOKE, fb.pos.x, fb.pos.y, fb.pos.z, (Math.random() - 0.5) * 0.5, 0.3, (Math.random() - 0.5) * 0.5, SMOKE_GREY, 1.2);
         this._emit(KIND.FIRE, fb.pos.x, fb.pos.y, fb.pos.z, (Math.random() - 0.5), (Math.random() - 0.5), (Math.random() - 0.5), FIRE_HOT, 0.2);
       } else if (kind === 'orb') {
@@ -480,6 +610,38 @@ export class Effects {
       }
       g.userData.last = { ...fb.pos };
     }
+
+    // Tracers race along their paths.
+    this.tracers = this.tracers.filter((tr) => {
+      tr.t += dt * TRACER_SPEED;
+      const at = Math.min(tr.t, tr.len);
+      tr.mesh.position.copy(tr.from).addScaledVector(tr.dir, at);
+      tr.light.pos.copy(tr.mesh.position);
+      if (tr.t < tr.len + 1) return true;
+      this.scene.remove(tr.mesh);
+      return false;
+    });
+    // Brief lights fade.
+    this.lights = this.lights.filter((l) => {
+      l.life -= dt;
+      l.color.copy(l.base).multiplyScalar(Math.max(0, l.life / l.max));
+      return l.life > 0;
+    });
+    // The nuke's cloud rises, swells and fades; its shockwave races out.
+    this.clouds = this.clouds.filter((c) => {
+      c.age += dt;
+      const t = c.age / c.life;
+      if (t >= 1) {
+        this.scene.remove(c.obj);
+        for (const m of c.mats) m.dispose();
+        if (c.ring) c.obj.geometry.dispose();
+        return false;
+      }
+      if (c.ring) c.obj.scale.setScalar(1 + c.ring * Math.sqrt(t));
+      else { c.obj.scale.setScalar(0.2 + 0.9 * Math.min(1, t * 3)); c.obj.position.y += dt * 1.5; }
+      for (const m of c.mats) m.opacity = (c.ring ? 0.7 : 0.85) * (1 - t) * (c.ring ? 1 : Math.min(1, (1 - t) * 3));
+      return true;
+    });
 
     // Beams fade out.
     this.beams = this.beams.filter((b) => {

@@ -24,7 +24,9 @@ class Connection {
   drain(handle) {
     const msgs = this.inbox;
     this.inbox = [];
-    for (const m of msgs) handle(m);
+    for (const m of msgs) {
+      try { handle(m); } catch (err) { console.error(`Handling a "${m.type}${m.fx ? `:${m.fx}` : ''}" message failed:`, err); } // (one bad message mustn't lose the rest)
+    }
   }
 }
 

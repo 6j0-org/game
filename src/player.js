@@ -36,13 +36,17 @@ tune('Health & XP', {
 });
 
 export const EYE_HEIGHT = 1.62;
+/** How far a player can see, in blocks: their render distance, from `state` (game.js sends what's this close; mobs farther from everyone vanish). */
+export const VIEW_MIN = 32;
+export const VIEW_MAX = 192;
+export const VIEW_DEFAULT = 96;
 const STAND_HEIGHT = 1.8;
 const CROUCH_HEIGHT = 1.5;
 const CROUCH_EYE = 1.27;
 const LOOK_SENSITIVITY = 0.0022;
 const WASH_ORDER = ['bowl', 'plate', 'glass', 'cutlery'];
 /** Timed conditions, in seconds left. stoneskin/invisible/polymorph/shrink/enlarge/hallucinate/chill come from spells. */
-export const NO_EFFECTS = { headache: 0, upset: 0, surge: 0, flap: 0, stoneskin: 0, invisible: 0, polymorph: 0, shrink: 0, enlarge: 0, hallucinate: 0, chill: 0, flight: 0, blind: 0 };
+export const NO_EFFECTS = { headache: 0, upset: 0, surge: 0, flap: 0, stoneskin: 0, invisible: 0, polymorph: 0, shrink: 0, enlarge: 0, hallucinate: 0, chill: 0, flight: 0, blind: 0, dizzy: 0 };
 
 export class Player extends Body {
   constructor(world) {
@@ -66,6 +70,7 @@ export class Player extends Body {
     this.hotbars = { left: Array(8).fill(null), right: Array(8).fill(null) }; // what you've put on each hand's hotbar (item kinds)
     this.materials = Object.fromEntries(Object.keys(MATERIALS).map((k) => [k, 0])); // crafting materials (crafting.js)
     this.mags = {}; // gun kind -> rounds loaded (weapons.js `mag`; R reloads: game.js `_reload`)
+    this.view = VIEW_DEFAULT; // (see VIEW_DEFAULT)
     this.reloading = null; // { gun, hand, other } while reloading: the gun sits in one hand, ammo goes in the other
     this.ult = 0; // the ultimate meter, 0-100 (ultimates.js; the game owns it)
     this.ultResist = 1; // damage taken while an ultimate (Unbreakable, Rally) is on

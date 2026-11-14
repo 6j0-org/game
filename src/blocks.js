@@ -81,6 +81,8 @@ export const POTTERY = 157; // ..216
 export const LUMINARY_LIT = 217; // ..228
 /** A thin layer of snow that Icebolts and Blizzards leave on top of blocks. It melts (game.js `_snow`), you walk through it, and you can build over it. */
 export const SNOW_LAYER = 229;
+/** The edge of the world (World `border`): what World.getBlock says is past it. Solid, unbreakable, never stored or drawn. */
+export const WORLD_EDGE = 230;
 export const POT_OBJECTS = ['mug', 'vase', 'plate', 'bowl', 'luminary'];
 export const POT_NAMES = ['Mug', 'Vase', 'Plate', 'Bowl', 'Luminary'];
 export const CLAYS = ['white', 'brown', 'red'];
@@ -223,6 +225,7 @@ CROPS.forEach((c, i) => {
 for (let v = 0; v < 8; v++) BLOCKS[TRAPDOOR + v] = same('Trapdoor', TILE.TRAPDOOR);
 CLAY_BLOCKS.forEach((id, c) => { BLOCKS[id] = same(CLAY_NAMES[c], TILE.CLAY + c); });
 BLOCKS[SNOW_LAYER] = same('Snow', TILE.SNOW_TOP);
+BLOCKS[WORLD_EDGE] = same('Edge of the world', TILE.STONE); // (never drawn: no tile of its own)
 BLOCKS[RANGE] = { name: 'Range', top: TILE.RANGE_TOP, side: TILE.RANGE_SIDE, bottom: TILE.RANGE_SIDE };
 BLOCKS[CAMPFIRE] = same('Campfire', TILE.CAMPFIRE);
 BLOCKS[SINK] = { name: 'Sink', top: TILE.SINK_TOP, side: TILE.SINK_SIDE, bottom: TILE.SINK_SIDE };
@@ -395,6 +398,7 @@ export const HOTBAR = [GRASS, DIRT, STONE, SAND, LOG, PLANKS, LEAVES, GLASS, BRI
 /** Blocks nobody can break or blow up (shop counters: the town's shops stay open). */
 export const UNBREAKABLE = new Uint8Array(MAX_BLOCK_IDS);
 for (let i = 0; i < SHOP_ORDER.length; i++) UNBREAKABLE[SHOP_COUNTER + i] = 1;
+UNBREAKABLE[WORLD_EDGE] = 1;
 
 /** Tools that cut leaves fast (swords of every kind: items.js adds the town's blades). */
 export const BLADES = new Set(['sword']);

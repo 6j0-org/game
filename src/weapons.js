@@ -23,7 +23,21 @@ export const AMMO = {
   cells: { name: 'Cells', box: 60, weight: 0.12 },
   rifle: { name: 'Rifle Rounds', box: 10, weight: 0.08 }, // the Sniper Rifle's
   arrows: { name: 'Arrows', box: 20, weight: 0, town: true }, // sold by the town's fletcher (weight 0: not in monsters' crates)
+  // Grenades (grenades.js): hold one and click to throw it, or load them into the Grenade Launcher (any mix).
+  frag: { name: 'Frag Grenades', box: 4, weight: 0.04, grenade: true },
+  sticky: { name: 'Sticky Grenades', box: 4, weight: 0.02, grenade: true },
+  incendiary: { name: 'Incendiary Grenades', box: 4, weight: 0.02, grenade: true },
+  flashbang: { name: 'Flashbangs', box: 4, weight: 0.02, grenade: true },
+  mine: { name: 'Proximity Mines', box: 3, weight: 0.01, grenade: true },
+  charge: { name: 'Radio Charges', box: 3, weight: 0.01, grenade: true }, // set off with the Detonator
+  flares: { name: 'Flares', box: 6, weight: 0.03 },
+  missiles: { name: 'Homing Missiles', box: 4, weight: 0.02 },
+  minirockets: { name: 'Mini Rockets', box: 16, weight: 0.02 },
+  nukes: { name: 'Nukes', box: 1, weight: 0 },
 };
+/** Ammo kinds that are grenades (throwable, and the Grenade Launcher takes any of them). */
+export const GRENADE_KINDS = Object.keys(AMMO).filter((k) => AMMO[k].grenade);
+export const isGrenade = (ammo) => !!AMMO[ammo]?.grenade;
 
 /** Guns with a magazine (`mag` rounds; R to reload, ammo in the other hand: game.js `_reload`). Bows aren't: arrows go one at a time. `loadOne`: a click loads one round (shells, rockets), not a full magazine. */
 export const usesMag = (kind) => !!GUNS[kind]?.mag;
@@ -39,7 +53,7 @@ export const GUNS = {
     desc: 'Reliable single shots. Uses bullets.' },
   shotgun: { name: 'Shotgun', usd: 90, ammo: 'shells', per: 1, mag: 6, loadOne: true, type: 'hitscan', damage: 6, pellets: 8, spread: 0.07, range: 28, cooldown: 0.9, knock: 4, twoHanded: true,
     desc: 'Eight pellets at once. Brutal up close. Uses shells.' },
-  machinegun: { name: 'Machine Gun', usd: 150, ammo: 'bullets', per: 1, mag: 30, type: 'hitscan', damage: 6, pellets: 1, spread: 0.025, range: 56, cooldown: 0.09, knock: 1.5, twoHanded: true,
+  machinegun: { name: 'Machine Gun', usd: 150, ammo: 'bullets', per: 1, mag: 30, tracer: true, type: 'hitscan', damage: 6, pellets: 1, spread: 0.025, range: 56, cooldown: 0.09, knock: 1.5, twoHanded: true,
     desc: 'Hold to spray. Eats bullets. Uses bullets.' },
   rocket: { name: 'Rocket Launcher', usd: 250, ammo: 'rockets', per: 1, mag: 1, loadOne: true, type: 'rocket', damage: 1.2, radius: 3.3, speed: 26, cooldown: 0.85, knock: 0, twoHanded: true,
     desc: 'Explodes on impact, blocks and all. Mind the splash. Uses rockets.' },
@@ -49,6 +63,18 @@ export const GUNS = {
     desc: 'An instant beam that goes through everything in a line. Uses slugs.' },
   overcharge: { name: 'Overcharge Cannon', usd: 900, ammo: 'cells', per: 30, mag: 90, type: 'orb', damage: 2, radius: 5.5, speed: 9, cooldown: 2.5, knock: 0, twoHanded: true,
     zapRadius: 7, zapDamage: 7, zapEvery: 0.3, desc: 'A slow orb that zaps everything near its path, then detonates hugely. 30 cells a shot.' },
+  // Explosives. The launcher fires whatever grenades you loaded into it, in the order you loaded them
+  // (`anyGrenade`; its `ammo` is only the default). Missiles are fireball kinds (game.js `_steerMissiles`).
+  launcher: { name: 'Grenade Launcher', usd: 300, ammo: 'frag', anyGrenade: true, per: 1, mag: 6, loadOne: true, type: 'grenade', damage: 1, speed: 26, cooldown: 0.7, knock: 0, twoHanded: true,
+    desc: 'Lobs grenades that go off when they hit (sticky ones stick; mines and radio charges wait). Load any mix: they come out in the order they went in.' },
+  flaregun: { name: 'Flare Gun', usd: 35, ammo: 'flares', per: 1, mag: 1, loadOne: true, type: 'flare', damage: 3, speed: 34, cooldown: 0.8, knock: 1,
+    desc: 'Fires a burning flare high into the air; it drifts down on a little parachute, lighting everything around it. Sets what it hits alight. Uses flares.' },
+  homing: { name: 'Homing Launcher', usd: 450, ammo: 'missiles', per: 1, mag: 4, type: 'homing', damage: 1, radius: 2.8, speed: 20, cooldown: 1, knock: 0, twoHanded: true,
+    desc: 'Its missiles find the nearest monster (or player, with PvP on) in front of them and chase it down. Uses homing missiles.' },
+  drunken: { name: 'Drunken Rocket Pod', usd: 380, ammo: 'minirockets', per: 8, mag: 24, type: 'drunken', damage: 0.45, radius: 1.6, speed: 16, cooldown: 1.2, knock: 0, twoHanded: true,
+    desc: 'Eight little rockets at once, corkscrewing out every which way. Uses mini rockets, eight a volley.' },
+  nuke: { name: 'Guided Nuke', usd: 5000, ammo: 'nukes', per: 1, mag: 1, loadOne: true, type: 'nuke', damage: 5, radius: 16, speed: 16, cooldown: 3, knock: 0, twoHanded: true,
+    desc: 'You ride it: your view goes to its nose, the mouse steers, and a click (or anything it hits) sets it off. Your body stays behind, standing still. Uses nukes.' },
   // Bows, from the fletcher.
   shortbow: { name: 'Shortbow', usd: 45, ammo: 'arrows', per: 1, type: 'arrow', damage: 7, speed: 30, gravity: 10, cooldown: 0.3, knock: 3, twoHanded: true, town: 'fletcher', draw: 0.6,
     desc: 'Light and quick: hold the button to draw, let go to shoot. Arrows drop as they fly, so aim high for long shots. Uses arrows.' },
@@ -93,4 +119,24 @@ for (const [k, g] of Object.entries(GUNS)) {
   bindTunable(g, 'gravity', 'Weapons', `arrowDrop_${k}`, `${g.name} arrow drop`, 'How fast its arrows fall');
   if (g.draw) bindTunable(g, 'draw', 'Weapons', `drawTime_${k}`, `${g.name} draw time`, 'Seconds to draw it all the way (a full draw: full speed and damage)', { unit: ' s', min: 0.05, max: 5, step: 0.05 });
 }
+for (const [k, g] of Object.entries(GUNS)) {
+  if (g.radius) bindTunable(g, 'radius', 'Weapons', `radius_${k}`, `${g.name} blast radius`, 'How far its explosion reaches, in blocks (it digs out a sphere that size)', { min: 0.5, max: 40, step: 0.1 });
+  if (g.speed && g.type !== 'arrow') bindTunable(g, 'speed', 'Weapons', `speed_${k}`, `${g.name} speed`, 'How fast what it fires flies, in blocks per second', { min: 1, max: 120 });
+}
+tune('Weapons', {
+  homingSeek: [40, 'Homing seek range', 'How far ahead a homing missile looks for something to chase, in blocks', { min: 1, max: 200 }],
+  homingTurn: [3, 'Homing turn rate', 'How sharply a homing missile turns towards its target', { min: 0.1, max: 20, step: 0.1 }],
+  homingLife: [8, 'Homing missile lifetime', 'Seconds before an unlucky homing missile blows up on its own', { unit: ' s', min: 1, max: 30 }],
+  drunkSpread: [0.35, 'Drunken rocket spread', 'How far apart the eight rockets set off', { min: 0, max: 1.5, step: 0.05 }],
+  drunkWobble: [0.6, 'Drunken rocket wobble', 'How wide their corkscrews are', { min: 0, max: 2, step: 0.05 }],
+  drunkWander: [1, 'Drunken rocket wander', 'How erratically they fly: the spin speeds up, slows and flips, the corkscrew swells and shrinks, the line wanders and lurches (0: perfect corkscrews)', { min: 0, max: 3, step: 0.1 }],
+  drunkLife: [3, 'Drunken rocket lifetime', 'Seconds before one gives up and goes off', { unit: ' s', min: 0.5, max: 10, step: 0.5 }],
+  nukeTurn: [1.2, 'Nuke turn rate', 'How fast a guided nuke follows your mouse, in radians a second', { min: 0.1, max: 6, step: 0.1 }],
+  nukeFires: [14, 'Nuke fires', 'Fires left burning across a nuke\'s crater', { min: 0, max: 60, step: 1 }],
+  nukeFireSeconds: [20, 'Nuke fire duration', 'How long those fires burn', { unit: ' s', min: 1, max: 120 }],
+  nukeBurn: [8, 'Nuke burn time', 'Seconds creatures and players caught near a nuke keep burning (water puts them out)', { unit: ' s', min: 0, max: 60 }],
+  nukeLife: [25, 'Nuke flight time', 'Seconds of fuel: then it goes off wherever it is', { unit: ' s', min: 3, max: 120 }],
+  tracerEvery: [3, 'Tracer rounds', 'Every this many machine-gun rounds is a tracer that glows on its way (0: none)', { min: 0, max: 10, step: 1 }],
+});
+
 bindTunable(GRAPPLE, 'range', 'Weapons', 'grappleRange', 'Grapple range', 'How far the grappling hook reaches, in blocks');

@@ -19,19 +19,18 @@ import { sizeScale, sizeSpeed, magic } from './spells.js';
 // Server settings (tuning.js): read the live values as T.key.
 tune('Monsters & animals', {
   seagullReach: [1.6, 'Seagull reach', 'How close a seagull gets before snatching food'],
-  maxBirds: [10, 'Max birds', 'Birds around at once (times Animals & birds)', { step: 1 }],
+  maxBirds: [10, 'Max birds', 'Birds around each player at once (times Animals & birds; players together share theirs)', { step: 1 }],
   birdSpook: [5, 'Bird spook distance', 'A perched bird takes off when you come this close'],
-  maxCows: [8, 'Max cows', 'Cows around at once (times Animals & birds)', { step: 1 }],
-  maxPets: [1, 'Max pets', 'Cats and dogs around at once', { step: 1, max: 10 }],
+  maxCows: [8, 'Max cows', 'Cows around each player at once (times Animals & birds; players together share theirs)', { step: 1 }],
+  maxPets: [1, 'Max pets', 'Cats and dogs around each player at once', { step: 1, max: 10 }],
   petSpawnInterval: [30, 'Pet spawn interval', 'Seconds between pet spawn rolls', { unit: ' s', min: 1 }],
   petSpawnChance: [0.2, 'Pet spawn chance', 'Chance a pet turns up each roll', { max: 1, step: 0.05 }],
   petNotice: [20, 'Pet notice distance', 'Pets come to you from this far'],
   seedOilMaxSize: [3, 'Seed Oil max size', 'Size of a new Seed Oil (it splits into smaller ones)', { step: 1, min: 1, max: 6 }],
-  maxMonsters: [14, 'Max monsters', 'Monsters around at once (times Monster spawns)', { step: 1 }],
+  maxMonsters: [14, 'Max monsters', 'Monsters around each player at once (times Monster spawns; players together share theirs)', { step: 1 }],
   lampSafe: [8, 'Lava lamp safe zone', 'No monsters spawn within this many blocks of a lava lamp'],
   darkness: [0.4, 'Spawn darkness', 'Monsters only spawn when daylight is below this (0 to 1)', { max: 1, step: 0.05 }],
   mobSight: [24, 'Monster sight', 'How far monsters notice you, in blocks'],
-  despawnDistance: [72, 'Despawn distance', 'Mobs farther than this from everyone vanish'],
   mobJump: [8.2, 'Mob jump strength', "Upward speed of a mob's jump"],
   arrowSpeed: [22, 'Arrow speed', 'Skeleton arrows, blocks per second'],
   arrowGravity: [14, 'Arrow drop', 'How fast arrows fall'],
@@ -63,7 +62,7 @@ export const MOB_TYPES = {
   ventilone: { tag: 'V', moves: ['terrestrial', 'natatorial'], halfW: 0.3, height: 1.7, hp: 14, speed: 3, burns: false, melee: true, damage: 1, knock: 18, weight: 0.06 }, // a flamingo with a desk fan for a head
   // Tung Tung Tung Sahur: a log with a face and a bat. `sahur`: only spawns from T.sahurStart until dawn; wood burns at sunrise.
   sahur: { tag: 'H', moves: ['terrestrial', 'natatorial'], halfW: 0.3, height: 2, hp: 30, speed: 2.7, burns: true, melee: true, damage: 4, knock: 9, weight: 0.35, sahur: true },
-  // The Amalgamation: three creatures glued into one (which three depends on its id: mobModels.js `amalgamParts`).
+  // The Amalgamation: three creatures glued into one (which three depends on its id: models.js `amalgamParts`).
   amalgam: { tag: 'A', moves: ['terrestrial'], halfW: 0.7, height: 1.9, hp: 45, speed: 1.9, burns: false, melee: true, damage: 5, knock: 8, weight: 0.04 },
   // Sized: box is 0.5*size wide and 0.4*size tall, hp and contact damage scale with size.
   seedoil: { tag: 'O', moves: ['terrestrial', 'natatorial'], sized: true, hp: 6, speed: 3.2, burns: false, weight: 0.12 },
@@ -96,6 +95,9 @@ const asList = (players) => (Array.isArray(players) ? players : players ? [playe
 const ignored = (p) => p.dead || p.buildy || p.effects?.invisible > 0; // (and the invisible)
 
 /** Closest player to a mob (horizontally), optionally only ones mobs notice. */
+/** Is `pos` within player `p`'s view (the square game.js sends them)? */
+const inView = (p, pos) => Math.abs(p.pos.x - pos.x) < (p.view ?? 96) && Math.abs(p.pos.z - pos.z) < (p.view ?? 96);
+
 function nearestPlayer(m, players, noticedOnly) {
   let best = null;
   let bestD = Infinity;
@@ -214,6 +216,13 @@ export class Mobs {
     }
   }
 
+  /** How many more mobs (`which`) may spawn near `who`: `cap` times the players in their view, less what's there now. */
+  _room(who, players, which, cap) {
+    const company = players.filter((p) => inView(who, p.pos)).length;
+    const there = this.list.filter((m) => !m.dead && which(m) && inView(who, m.pos)).length;
+    return Math.round(cap * company) - there;
+  }
+
   _randomPlayer(players) {
     return players[Math.floor(this.rand() * players.length)];
   }
@@ -228,15 +237,15 @@ export class Mobs {
     players = asList(players);
     const events = [];
     if (!players.length) return events;
-    const extra = players.length - 1; // more players, more company
-
+    // Populations are per player: each try is near one player (picked at random, so more players means more
+    // tries), and goes ahead while what's around them is under the limit times the players around them.
+    const n = players.length;
     const { monsters = 1, wildlife = 1 } = this.settings || {}; // server settings (multipliers; 0 = none)
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0 && monsters > 0) {
-      this.spawnTimer = T.monsterInterval / monsters;
-      const hostiles = this.list.filter((m) => !MOB_TYPES[m.type].passive).length;
-      if (hostiles < Math.round((T.maxMonsters + extra * 6) * monsters)) {
-        const who = this._randomPlayer(players);
+      this.spawnTimer = T.monsterInterval / monsters / n;
+      const who = this._randomPlayer(players);
+      if (this._room(who, players, (m) => !MOB_TYPES[m.type].passive, T.maxMonsters * monsters) > 0) {
         if (this._underground(who)) this._trySpawnCave(who); // caves are dark all day (world.js caveShade)
         else if (light < T.darkness) this._trySpawn(who); // only in the dark
         else this._trySpawnBackrooms(who); // (the Backrooms' dark rooms are dark all day)
@@ -244,24 +253,24 @@ export class Mobs {
     }
     this.herdTimer -= dt;
     if (this.herdTimer <= 0) {
-      this.herdTimer = T.herdInterval;
-      const cows = this.list.filter((m) => m.type === 'cow').length;
-      const maxCows = Math.round((T.maxCows + extra * 3) * wildlife);
-      if (light > 0.6 && cows < maxCows) this._trySpawnHerd(this._randomPlayer(players), maxCows - cows);
+      this.herdTimer = T.herdInterval / n;
+      const who = this._randomPlayer(players);
+      const cows = this._room(who, players, (m) => m.type === 'cow', T.maxCows * wildlife);
+      if (light > 0.6 && cows > 0) this._trySpawnHerd(who, cows);
       // Birds come with the daytime wildlife, a flock at a time.
-      const birds = this.list.filter((m) => MOB_TYPES[m.type].flies).length;
-      const maxBirds = Math.round((T.maxBirds + extra * 3) * wildlife);
-      if (light > 0.6 && birds < maxBirds && this.rand() < T.flockChance) this._trySpawnFlock(this._randomPlayer(players), maxBirds - birds);
+      const birds = this._room(who, players, (m) => MOB_TYPES[m.type].flies, T.maxBirds * wildlife);
+      if (light > 0.6 && birds > 0 && this.rand() < T.flockChance) this._trySpawnFlock(who, birds);
     }
     this.petTimer -= dt;
     if (this.petTimer <= 0) {
-      this.petTimer = T.petSpawnInterval;
-      const pets = this.list.filter((m) => MOB_TYPES[m.type].pet).length;
-      if (pets < Math.round((T.maxPets + extra) * wildlife) && this.rand() < T.petSpawnChance * wildlife) this._trySpawnPet(this._randomPlayer(players));
+      this.petTimer = T.petSpawnInterval / n;
+      const who = this._randomPlayer(players);
+      if (this._room(who, players, (m) => MOB_TYPES[m.type].pet, T.maxPets * wildlife) > 0 && this.rand() < T.petSpawnChance * wildlife) this._trySpawnPet(who);
     }
 
     for (const m of this.list) {
       if (m.dead) continue;
+      m.unseen = !players.some((p) => inView(p, m.pos)); // (out of everyone's sight: it goes)
       const nearest = nearestPlayer(m, players, false);
       const target = nearestPlayer(m, players, true) || nearest;
       this._think(m, dt, target, nearest, light, events);
@@ -305,7 +314,7 @@ export class Mobs {
     const uz = dz / dist;
     const anyDist = Math.hypot(nearest.pos.x - m.pos.x, nearest.pos.z - m.pos.z);
 
-    if (anyDist > T.despawnDistance || m.pos.y < -20 || (!t.passive && light > 0.6 && anyDist > T.mobSight && this.rand() < dt * 0.05)) {
+    if (m.unseen || m.pos.y < -20 || (!t.passive && light > 0.6 && anyDist > T.mobSight && this.rand() < dt * 0.05)) {
       m.dead = true;
       m.silentDeath = true;
       return;

@@ -40,6 +40,9 @@ Everyone shares one world: blocks, time of day, monsters, animals, dropped items
 - **Tab** opens a map of the land around you with everyone's phone on it.
 - **T** (skip time) only works in single player.
 - Monsters chase, and pets follow, whoever is nearest.
+- Monsters and animals are counted per player: each of you gets your own share around you, so a group of three has three times the company. Creatures nobody can see any more vanish.
+- Your browser is only sent what's within your render distance (Settings > Graphics); players farther away still show on the Tab map. Messages are compressed.
+- **The world has an edge,** 8,192 blocks from the middle in each direction (the World size server setting): an invisible wall from bedrock to the sky, where the land stops in a cut-away cliff.
 
 **Voice and HTTPS:** voices go straight from browser to browser on your network (the server keeps track of who's in voice and passes along the set-up). Every pair of players has its own connection, so the more people are online, the more upload bandwidth each one uses. Browsers only let a page use the microphone on `https://` or `http://localhost`, so over a plain `http://192.168…` address friends can hear everyone but not talk. To fix that, give the server a certificate:
 
@@ -84,7 +87,7 @@ Three.js r160 is loaded from jsDelivr through the import map in `index.html`, so
 | Space | Jump, swim up, fly up |
 | Shift | Sprint (also flies faster) |
 | C | Crouch on land (slow, lower view, won't walk off ledges), fly down, or dive when swimming |
-| B | Buildy Boi mode on/off (takes 10 seconds; press again to cancel) |
+| B | Buildy Boi mode on/off (takes 3 seconds; press again to cancel) |
 | F | Toggle flying (Buildy Bois only) |
 | **Q** / **E** | Choose what's in your **left** / **right** hand |
 | Left / right click | Use your left / right hand (see below) |
@@ -144,7 +147,7 @@ During the day, **cows** wander in herds on grass. Hit one and it runs (it takes
 
 **Birds** of five kinds fly about by day: **bluebirds**, big flocks of **scaly-breasted munias**, quick yellow **finches**, round slow **crusty-titted nutmunches** (inland), and **seagulls** (only where there's water nearby) over water and beaches, which swoop in and steal food out of your hand. They wheel a few blocks up and sometimes land to peck at the ground (get within 5 blocks and they take off). Shoot one down, or catch one on the ground, and it drops a **Roast Bird**. Eating it (you can, even at full health) makes you **flappy for 30 seconds**: every tap of **Space** in mid-air is a flap upward. Tap about three times a second to climb, slower to glide down.
 
-**Blocks and Buildy Boi mode:** normally you only have the blocks you've collected. Break a block and it goes into your inventory; place one and it's used up. Crafted blocks (planks, glass, brick, stairs, slabs, fences, ladders, trapdoors, doors, lava lamps, beds, Cold Wallets and 3D Printers) can also be printed at the **3D Printer** in batches, or ordered from **CONSUME** on your phone. Press **B** to become a **Buildy Boi**: after 10 seconds you put on a little yellow hard hat (everyone can see it) and get **every item, unlimited**: every block, tool, weapon (the Fantasy Town's too), food, scroll and all the ammo, and nothing gets used up. Plus **flying** (F). Taking the hat off takes the free things with it (and any armor you put on as a Buildy Boi). Buildy Bois are **invincible** (nothing hurts them, and falling out of the world just puts them back at their spawn point) and **mobs ignore them**: monsters don't chase them, seagulls don't steal from them, and birds and pets don't notice them. They can still use weapons, spells and throwing. Press B again to take the hat off, which also takes 10 seconds.
+**Blocks and Buildy Boi mode:** normally you only have the blocks you've collected. Break a block and it goes into your inventory; place one and it's used up. Crafted blocks (planks, glass, brick, stairs, slabs, fences, ladders, trapdoors, doors, lava lamps, beds, Cold Wallets and 3D Printers) can also be printed at the **3D Printer** in batches, or ordered from **CONSUME** on your phone. Press **B** to become a **Buildy Boi**: after 3 seconds you put on a little yellow hard hat (everyone can see it) and get **every item, unlimited**: every block, tool, weapon (the Fantasy Town's too), food, scroll and all the ammo, and nothing gets used up. Plus **flying** (F). Taking the hat off takes the free things with it (and any armor you put on as a Buildy Boi). Buildy Bois are **invincible** (nothing hurts them, and falling out of the world just puts them back at their spawn point) and **mobs ignore them**: monsters don't chase them, seagulls don't steal from them, and birds and pets don't notice them. They can still use weapons, spells and throwing. Press B again to take the hat off, which also takes 3 seconds.
 
 **Wheat** grows in fields on grassy land. Walk through it; break it (instantly by hand) and it drops **bread**.
 
@@ -202,11 +205,19 @@ During the day, **cows** wander in herds on grass. Hit one and it runs (it takes
 | Grappling Hook | $60 | Hooks a block up to 40 away and reels you in while you hold the button |
 | Pistol | $40 | 9 per shot, accurate. Bullets |
 | Shotgun | $90 | 8 pellets × 6, brutal up close. Shells |
-| Machine Gun | $150 | 6 per shot, ~11 shots a second while held. Bullets |
+| Machine Gun | $150 | 6 per shot, ~11 shots a second while held; every third round is a glowing tracer. Bullets |
 | Rocket Launcher | $250 | Exploding rockets: blows up blocks too, mind the splash. Rockets |
 | Sniper Rifle | $350 | 45 damage (90 to the head), reaches 220 blocks, bolt-action. Wild from the hip; **right-click for the scope** and keep clicking: 5×, 10×, 20×, then off. Rifle rounds |
 | Railgun | $400 | 60 damage, instant, goes through everything in a line. Slugs |
 | Overcharge Cannon | $900 | A slow green orb that zaps everything near its path, then detonates hugely. 30 cells a shot |
+| Flare Gun | $35 | Fires a burning flare high up; it drifts down on a parachute and lights everything round it for 25 s. Sets what it hits alight. Flares |
+| Grenade Launcher | $300 | Lobs grenades that go off when they hit (sticky ones stick; mines and radio charges wait). Load any mix of grenades (R, then click with each kind): they come out in the order they went in. Grenades |
+| Homing Launcher | $450 | Missiles that chase the nearest monster (or player, with PvP on) in front of them. Homing missiles |
+| Drunken Rocket Pod | $380 | Eight little rockets at once, corkscrewing out every which way. Mini rockets, 8 a volley |
+| Guided Nuke | $5000 | **You ride it**: your view goes to its nose, the mouse steers, a click (or anything it hits) sets it off. It digs out a crater a chunk across (16 blocks every way), leaves fires burning all over it, and sets anything nearby alight (jump in water to put yourself out); a flash that blinds anyone looking, and a mushroom cloud. Your body stands still where you fired it. Nukes |
+| Detonator | $25 | Click to set off every Radio Charge you have out |
+
+**Grenades** are ammo you can throw: hold a box of them and click. **Frag** grenades bounce and go off after 2.5 s; **sticky** ones stick to whatever they touch (a creature or player too) and go off 2 s later; **incendiary** ones burst into a fire that sets alight everything standing in it for 8 s (burning things keep burning a moment after they step out; water puts them out); **flashbangs** blind everyone who can see them for up to 10 s and leave them dizzy (the view sways and they stagger; worst up close and looking right at it; walls protect you); **proximity mines** stick where they land, arm after 1.5 s (a quiet double beep, and no light to give them away) and blow up when anything comes close, **you included**, so step away; **radio charges** stick and wait for your **Detonator**. Thrown kills train the Grenade skill (a Grenadier). Every fuse, radius, strength and time is a server setting (Grenades).
 
 **Biomes:** the land is plains, forest, jungle, desert, taiga and swamp, with special zones here and there: the Concrete Jungle, the Abandoned City, Hell, the Backrooms, the **Neon City** (for now built like the Concrete Jungle; the cyberpunk city is coming) and the **Fantasy Town**. Biomes are big: crossing one can take a few minutes. (They used to be ten times smaller. Worlds made before that keep the old, smaller terrain wherever anyone had built (every chunk with player changes, plus one chunk around it), and the new land eases into it over about 32 blocks, so your builds still stand on the ground they were built on. Likewise the Ball Pit is gone from new land, but ball pits where anyone had built stay, and its Foam and Ball Pit Balls blocks are still in the game.)
 
@@ -256,6 +267,8 @@ Coal and ore turn up now and then when you **mine stone** (silver rarely), sulfu
 | `/msg Bob hi there` | A private message to one player (also /tell, /w). Anything you type without a / goes to everyone |
 | `/skip` | Skips ahead a quarter of a day (single player) |
 | `/ultimate [name]` | Lets any ultimate go right now, whatever your class (for testing; behind the Cheat commands setting). With no name it lists them all |
+| `/sun`, `/moon` `[count \| [number] color <c> \| [number] size <x> \| random]` | Every world rolls its own sky: one to three suns, up to four moons, all different colours and sizes. These list them or change them for everyone (/sun 2, /moon 1 color #ff8844, /moon size 2, /sun random). Colours are names (red, gold, purple...) or #rrggbb. Changing them is behind the Cheat commands setting |
+| `/ring [on \| off \| random \| color <c> \| size <x> \| width <x> \| tilt <x>]` | Some worlds have a ring like a ringed planet's, an arch across the northern sky. This adds, changes or removes it |
 | `/land`, `/land allow\|deny place\|break\|modify`, `/land release` | Your land (multiplayer): whose chunk you're in, what others may do on yours, or give it up |
 | `/give` | Opens a searchable tile panel of every item in the game (the same one as the Q/E inventory): click or Enter gives you one, and it stays open so you can grab several |
 | `/give <item> [count]` | Gives you any item, by its name or short id, in any case and spacing: `/give longsword`, `/give healing potion 3`, `/give arrows 100` (ammo counts rounds), `/give planks` (blocks come 64 at a time), `/give scroll:fireball`, `/give zcash 50`. Up to 9,999 |
@@ -361,7 +374,7 @@ Snow from Icebolts and Blizzards melts after about three minutes, and you can wa
 
 These are the defaults: every number (mana, regeneration, potency, costs, cooldowns, damage, durations, ranges) is in **Server settings** under Magic. Targeted spells that find nothing to hit cost nothing. Shrink and Enlarge replace each other. In PvP, other players can be shrunk, enlarged, made to hallucinate, polymorphed (they can't move or act) and zapped.
 
-**Reloading:** guns have magazines (Pistol 12, Machine Gun 30, Shotgun 6, Sniper Rifle 5, Railgun 4, Rocket Launcher 1, Overcharge Cannon 90 cells; all server settings), and you shoot what's loaded. Ammo is something you hold. To reload: with the gun in your hand, press **R** (it goes into one hand, even a two-handed gun), put its ammo in your **other hand** (tap Q or E, or a hotbar), **click with the ammo hand** to load it (a full magazine; shells and rockets go in one per click), then press **R** again to finish. You can't shoot while reloading. The ammo panel (bottom right) shows what's loaded and what's spare. Bows don't need reloading (arrows go one at a time), Buildy Bois never reload, and loaded rounds go into your backpack when you die.
+**Reloading:** guns have magazines (Pistol 12, Machine Gun 30, Shotgun 6, Sniper Rifle 5, Railgun 4, Rocket Launcher 1, Overcharge Cannon 90 cells; all server settings), and you shoot what's loaded. Ammo is something you hold. To reload: with the gun in your hand, press **R** (it goes into one hand, even a two-handed gun), put its ammo in your **other hand** (tap Q or E, or a hotbar), **click with the ammo hand** to load it (a full magazine; shells and rockets go in one per click), then press **R** again to finish. You can't shoot while reloading. The ammo panel (bottom right) shows what's loaded and what's spare. Bows don't need reloading (arrows go one at a time), Buildy Bois reload like everyone else (their ammo never runs out), and loaded rounds go into your backpack when you die.
 
 **Two-handed guns:** the shotgun, machine gun, rocket launcher, railgun and Overcharge Cannon take both hands (only the pistol is one-handed). Each gun fires with its own hand's button (a two-handed gun with the left). **Holding the right button aims down the sights** (a 2× zoom, a mouse slowed to match and tighter spread; the zoom is the Aiming zoom server setting) when your right hand is free for it: with a two-handed gun, or a one-handed gun in your left hand and nothing in your right. If your right hand holds something, the right button uses that instead. Right-clicking a door, bed and so on still uses it.
 
@@ -415,7 +428,7 @@ In single player, the world seed, your block edits and your progress are saved i
 - `src/items.js`: food, dishes, tools (dollar prices), loot, dropped items, and the hand inventory (search and Tab completion)
 - `src/market.js`: the wild ZEC/USD exchange rate and price conversion
 - `src/daycycle.js`: time of day and daylight level
-- `src/mobModels.js`, `src/effects.js`, `src/sky.js`: Three.js visuals for mobs, particles and explosions, and the sky
+- `src/models.js`, `src/effects.js`, `src/sky.js`: Three.js models for mobs, held items, drops and drones, particles and explosions, and the sky
 - `src/textures.js`: procedurally painted 16px tile atlas and block icons
 - `src/picker.js`: the Q/E hand picker: a tile grid with search, Tab completion, arrows, click and Enter
 - `src/game.js`: the authoritative game (world edits, mobs, items, health, inventories, saves). The server runs it; single player runs it in the browser

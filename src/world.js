@@ -7,6 +7,22 @@ import { AIR, GRASS, DIRT, STONE, SAND, LOG, LEAVES, WATER, WHEAT, SNOW_GRASS, S
 import { biomeAt, biomeAtV1, biomeAtV2, groundHeight, cityColumn, backroomsWall, backroomsLight, ROOM, ROOM_HEIGHT, HELL_LAVA } from './biomes.js';
 import { townColumn, TOWN_CELL, MARKET_EVERY, MARKET, MARKET_ARRIVAL } from './townplan.js';
 import { createNoise2D, hash2 } from './noise.js';
+import { WORLD_EDGE } from './blocks.js';
+import { tune, T } from './tuning.js';
+
+tune('World', {
+  worldBorder: [8192, 'World size', 'How far the world goes from the middle, in blocks (each way, in whole chunks): past that is the edge, an invisible wall from the bottom to the sky. Shrinking it fully applies when players rejoin', { min: 256, max: 1048576, step: 16 }],
+});
+/** Is chunk (cx, cz) past the edge of the world (the World size setting)? */
+export const chunkOutside = (cx, cz) => { const b = Math.floor(T.worldBorder / 16); return cx < -b || cx >= b || cz < -b || cz >= b; };
+/** Is block column (x, z) past the edge? */
+export const outsideWorld = (x, z) => chunkOutside(x >> 4, z >> 4);
+/** (x, z) moved just inside the edge if it's past it. */
+export function insideWorld(x, z) {
+  const b = Math.floor(T.worldBorder / 16) * 16;
+  const c = (v) => Math.max(-b + 0.5, Math.min(b - 0.5, v));
+  return { x: c(x), z: c(z) };
+}
 
 export const CS = 16; // chunk size (x and z)
 export const CH = 80; // chunk height (y)
@@ -145,20 +161,22 @@ export class World {
     const key = World.key(cx, cz);
     let chunk = this.chunks.get(key);
     if (!chunk) {
-      chunk = { cx, cz, key, data: this._generate(cx, cz), meshes: null, dirty: true };
+      const data = chunkOutside(cx, cz) ? new Uint16Array(CS * CS * CH) : this._generate(cx, cz); // (nothing past the edge)
+      chunk = { cx, cz, key, data, meshes: null, dirty: true };
       this.chunks.set(key, chunk);
     }
     return chunk;
   }
 
   getBlock(x, y, z) {
+    if (outsideWorld(x, z)) return WORLD_EDGE; // (a wall all the way up: no flying round it)
     if (y < 0) return STONE;
     if (y >= CH) return AIR;
     return this.getChunk(x >> 4, z >> 4).data[index(x & 15, y, z & 15)];
   }
 
   setBlock(x, y, z, id) {
-    if (y < 0 || y >= CH) return false;
+    if (y < 0 || y >= CH || outsideWorld(x, z)) return false;
     const chunk = this.getChunk(x >> 4, z >> 4);
     const lx = x & 15;
     const lz = z & 15;

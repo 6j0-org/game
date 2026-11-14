@@ -18,7 +18,7 @@ import { UNFIRED, unfiredInfo, unfiredName, firedId, fireSeconds, clayFor, glaze
 import { GARDEN_TOOLS } from './garden.js';
 import { Lamps, lavaLampModel } from './lamps.js';
 import { MOB_TYPES } from './mobs.js';
-import { MobModels, buildHeldModel, buildMobModel, buildDroneModel } from './mobModels.js';
+import { MobModels, buildHeldModel, buildMobModel, buildDroneModel } from './models.js';
 import { BESTIARY, bestiaryFacts } from './bestiary.js';
 import { Effects } from './effects.js';
 import { Sky } from './sky.js';
@@ -36,6 +36,7 @@ import { SETTINGS, SETTING_GROUPS, loadSettings, settingText, gunStats, T, setTu
 import { SPELLS, SPELL_ORDER, isFocus, spellCost, spellCooldown } from './spells.js';
 import { Phantoms } from './phantoms.js';
 import { COMMANDS, PLACES, MOB_WORDS, ULT_WORDS, commandOf } from './commands.js';
+import { SKY_COLORS } from './celestial.js';
 import { SoundSystem, blockMaterial } from './audio.js';
 import { Music } from './music.js';
 import { Fishes } from './fishes.js';
@@ -48,7 +49,9 @@ import { blocksBetween, probeSpace } from './acoustics.js';
 import { PhoneApps } from './phone.js';
 import { MapView } from './map.js';
 import { zecFor, usd } from './market.js';
-import { GUNS, AMMO, GRAPPLE, usesMag } from './weapons.js';
+import { GUNS, AMMO, GRAPPLE, GRENADE_KINDS, usesMag } from './weapons.js';
+/** How the launcher's queue reads on the HUD. */
+const GRENADE_LETTER = { frag: 'F', sticky: 'S', incendiary: 'I', flashbang: 'B', mine: 'M', charge: 'C' };
 import { STATS, statEffects, effectText, verdict } from './stats.js';
 import { questGoal, questProgress, questReady, lostName } from './quests.js';
 import { ERRAND_ITEMS, jobUsd, jobSeconds, jobMax } from './jobs.js';
@@ -137,6 +140,7 @@ world.setLegacy(welcome.legacy); // chunks frozen on the first generation (befor
 world.setGen2(welcome.gen2 || []); // and on the second (the one with the Ball Pit)
 world.setGen3(welcome.gen3 || []); // and on the third (before caves)
 for (const [x, y, z, id] of welcome.edits) world.setBlock(x, y, z, id);
+let guide = null; // riding a guided nuke: { id, saved: { yaw, pitch }, t, seen, goneT } (see setGuide)
 const player = new Player(world);
 player.spawn(welcome.pos);
 Object.assign(player.hands, welcome.hands);
@@ -174,6 +178,9 @@ function applyYou(y) {
   player.quests = y.quests || { active: [], cool: [], done: 0 };
   player.ult = y.ult ?? 0; // the ultimate meter (ultimates.js)
   player.mags = y.mags || {}; // rounds loaded in each gun (weapons.js `mag`)
+  player.launcherLoad = y.launcherLoad || []; // the Grenade Launcher's grenades, next first
+  player.burning = !!y.burning; // on fire (a nuke, a flare, a fire: game.js `_ignite`)
+  if (guide && !y.guiding && guide.t > 0.5) setGuide(null); // (no longer riding a nuke: a second way of hearing it, besides `guide`)
   const wasReloading = player.reloading;
   player.reloading = y.reloading ? { ...y.reloading, other: y.reloading.hand === 'left' ? 'right' : 'left' } : null; // (validateHands keeps the gun in one hand)
   if (wasReloading && !player.reloading) player.validateHands(wasReloading.hand === 'left' ? 'right' : 'left'); // done: a two-handed gun takes both hands again
@@ -307,12 +314,49 @@ function refreshHeld() {
 }
 
 const sky = new Sky(scene);
+sky.set(welcome.sky); // this world's suns, moons and ring (celestial.js)
 const lamps = new Lamps(scene);
 let lampsDirty = true;
 const panelLights = []; // fluorescent panels near you
 const PANEL_COLOR = new THREE.Vector3(0.95, 0.93, 0.75); // that flat, buzzing, slightly yellow light
 const LUMINARY_COLOR = new THREE.Vector3(1, 0.7, 0.38); // a candle behind clay: warm and orange
 let lampSyncT = 0;
+// Light from things that burn or glow for a moment (flares, fires, tracers, explosions: effects.js
+// `lights`), merged in front of the lamps each frame (flashlight.js `setLamps`: the nearest LAMP_MAX light the world).
+const FLARE_LIGHT = new THREE.Vector3(1.6, 0.35, 0.3);
+const FIRE_LIGHT = new THREE.Vector3(1.4, 0.7, 0.25);
+function dynamicLights() {
+  const out = [];
+  for (const g of remote.grenades.values()) {
+    if (g.kind === 'flare') out.push({ pos: new THREE.Vector3(g.pos.x, g.pos.y, g.pos.z), color: FLARE_LIGHT, range: 22 });
+  }
+  for (const f of remote.fires.values()) out.push({ pos: new THREE.Vector3(f.pos.x, f.pos.y + 0.8, f.pos.z), color: FIRE_LIGHT.clone().multiplyScalar(0.85 + Math.random() * 0.3), range: f.r * 2.5 });
+  out.push(...effects.lights);
+  return out;
+}
+
+/** Grenades in flight spin; flares spit sparks under a parachute; fires flicker. */
+function updateGrenades(dt) {
+  for (const g of remote.grenades.values()) {
+    g.model.position.set(g.pos.x, g.pos.y, g.pos.z);
+    if (!g.stuck && g.kind !== 'flare') { g.model.rotation.x += dt * 8; g.model.rotation.z += dt * 5; }
+    if (g.kind === 'flare') { effects.flare(g.pos.x, g.pos.y, g.pos.z, g.chute); if (g.model.userData.chute) g.model.userData.chute.visible = !!g.chute; }
+  }
+  for (const f of remote.fires.values()) effects.fire(f.pos.x, f.pos.y, f.pos.z, f.r, dt);
+  // People on fire: flames all over them (yours too: look down).
+  for (const p of remote.players.values()) if (p.burning && !p.dead && !p.invisible) effects.burn(p.pos.x, p.pos.y, p.pos.z, 0.3 * (p.scale ?? 1), 1.8 * (p.scale ?? 1));
+  if (player.burning && !player.dead) effects.burn(player.pos.x, player.pos.y, player.pos.z, 0.35, 1.2);
+  if (guide) { // the HUD while riding a nuke
+    guide.t += dt;
+    // Come home even if the game's word never arrives: the nuke's been gone a moment, or its fuel ran out long ago.
+    if (remote.fireballs.has(guide.id)) { guide.seen = true; guide.goneT = 0; } else if (guide.seen) guide.goneT = (guide.goneT || 0) + dt;
+    if (guide.goneT > 0.5 || guide.t > settings.nukeLife + 5) { setGuide(null); return; }
+    const left = Math.max(0, Math.ceil(settings.nukeLife - guide.t));
+    const text = `☢ GUIDED NUKE · move the mouse to steer · click to detonate · ${left} s of fuel`;
+    if (guideEl.textContent !== text) guideEl.textContent = text;
+  }
+}
+
 /** Lava lamps in the chunks around you (they're not meshed: each is a little model and a light). */
 function updateLamps(dt, lightMul) {
   lampSyncT -= dt;
@@ -336,7 +380,9 @@ function updateLamps(dt, lightMul) {
   }
   const sources = lamps.update(dt, camera.position);
   for (const l of panelLights) l.d = l.pos.distanceToSquared(camera.position);
-  setLamps([...sources, ...panelLights].sort((a, b) => a.d - b.d), lightMul);
+  const glows = dynamicLights(); // (these first: they're brief and bright)
+  for (const l of glows) l.d = l.pos.distanceToSquared(camera.position) - 400; // (counted as nearer than they are)
+  setLamps([...glows, ...sources, ...panelLights].sort((a, b) => a.d - b.d), lightMul);
 }
 const effects = new Effects(scene, atlasCanvas);
 const ultFx = new UltFx(scene, effects); // ultimates' storms, bursts and shimmers (ultfx.js)
@@ -385,8 +431,9 @@ function buildChunk(chunk) {
 
 let frameCount = 0;
 function updateChunks() {
-  const pcx = Math.floor(player.pos.x / CS);
-  const pcz = Math.floor(player.pos.z / CS);
+  const center = viewCenter(); // (riding a nuke: round the nuke)
+  const pcx = Math.floor(center.x / CS);
+  const pcz = Math.floor(center.z / CS);
   const todo = [];
   for (let dz = -renderDistance; dz <= renderDistance; dz++) {
     for (let dx = -renderDistance; dx <= renderDistance; dx++) {
@@ -485,12 +532,19 @@ function syncSelf(lightMul, dt) {
     // (looking through a scope: no arms or gun in the way)
     dead: player.dead || (first && (player.effects.polymorph > 0 || (scopeLevel > 0 && adsT > 0.5))),
     moved, scale, buildy: player.buildy, poly: player.effects.polymorph > 0,
-    stone: player.effects.stoneskin > 0, surge: player.effects.surge > 0, self: true, firstPerson: first, ult: player.ultOn?.key || null, worn: player.worn || null, look: identity.look, tall: player.stats?.tallness ?? 10, sw: mySwings, mine: myMineHand, draw: Math.max(bowDraw.left, bowDraw.right),
+    stone: player.effects.stoneskin > 0, surge: player.effects.surge > 0, self: true, firstPerson: first, ult: player.ultOn?.key || null, worn: player.worn || null, look: identity.look, tall: player.stats?.tallness ?? 10, sw: mySwings, mine: myMineHand, draw: Math.max(bowDraw.left, bowDraw.right), reload: player.reloading,
   };
   selfAvatar.sync(new Map([[myId, me]]), lightMul, dt);
 }
 /** Where the camera goes this frame for the view you picked: back along your aim (or in front, looking back), stopping at walls. */
 function placeViewCamera() {
+  const nuke = guide && remote.fireballs.get(guide.id);
+  if (nuke) { // riding a guided nuke: from just ahead of its nose (its own body hidden), looking where you steer
+    const mesh = effects.fireballMeshes.get(guide.id);
+    if (mesh) mesh.visible = false;
+    camera.position.set(nuke.pos.x, nuke.pos.y, nuke.pos.z).addScaledVector(dir, 1.2);
+    return;
+  }
   if (sheetOpen) { // the character sheet: you, from the front (or wherever you've dragged it), framed on the right
     const s = Math.min(3, player.bodyScale || 1);
     const a = player.yaw + sheetOrbit;
@@ -546,6 +600,23 @@ const ICONS = {
   shotgun: [['#3a3e46', 4, 5, 12, 2], ['#6b4a2b', 0, 6, 5, 4], ['#6b4a2b', 8, 7, 4, 2], ['#2d3036', 4, 8, 2, 3]],
   machinegun: [['#2d3036', 1, 5, 9, 4], ['#55595f', 10, 6, 6, 2], ['#2d3036', 5, 9, 3, 5], ['#2d3036', 2, 9, 2, 4], ['#d9a93a', 7, 4, 2, 1]],
   rocket: [['#4f5d3a', 0, 5, 14, 5], ['#2d3036', 13, 4, 3, 7], ['#d94a3a', 15, 6, 1, 3], ['#2d3036', 5, 10, 2, 4]],
+  // Explosives (16×16: [colour, x, y, w, h])
+  launcher: [['#3a4030', 1, 6, 12, 5], ['#2d3036', 11, 5, 4, 7], ['#55595f', 12, 7, 3, 3], ['#4a3324', 0, 8, 3, 5], ['#2d3036', 5, 11, 2, 3], ['#d9a93a', 7, 5, 2, 1]],
+  flaregun: [['#e8621a', 3, 5, 10, 4], ['#f08a3a', 4, 6, 8, 2], ['#2d3036', 12, 5, 2, 4], ['#c84a14', 3, 8, 4, 6], ['#2d3036', 7, 9, 1, 2]],
+  homing: [['#5a6a3a', 0, 5, 14, 6], ['#2d3036', 13, 4, 3, 8], ['#d94a3a', 14, 6, 2, 4], ['#7fd8ff', 4, 4, 4, 1], ['#2d3036', 5, 11, 2, 3]],
+  drunken: [['#4a4f58', 1, 3, 12, 10], ['#2d3036', 12, 3, 3, 10], ['#d94a3a', 13, 4, 2, 2], ['#d94a3a', 13, 7, 2, 2], ['#d94a3a', 13, 10, 2, 2], ['#f2c230', 3, 5, 1, 6]],
+  nuke: [['#3a3e46', 0, 5, 13, 6], ['#f2c230', 12, 4, 4, 8], ['#1a1a1a', 13, 6, 2, 1], ['#1a1a1a', 13, 9, 2, 1], ['#f2c230', 3, 6, 4, 4], ['#1a1a1a', 4, 7, 2, 2]],
+  detonator: [['#2d3036', 4, 5, 8, 10], ['#d94a3a', 6, 7, 4, 3], ['#55595f', 9, 1, 1, 5], ['#3cff6a', 5, 12, 2, 1]],
+  frag: [['#4f5d3a', 4, 5, 8, 9], ['#3d4a2e', 4, 8, 8, 1], ['#3d4a2e', 4, 11, 8, 1], ['#9aa0a8', 6, 3, 4, 2], ['#9aa0a8', 10, 2, 2, 4]],
+  sticky: [['#3a8a4a', 4, 5, 8, 9], ['#9aff9a', 5, 6, 3, 2], ['#9aa0a8', 6, 3, 4, 2], ['#6ad86a', 3, 12, 10, 2]],
+  incendiary: [['#b03020', 4, 5, 8, 9], ['#f2c230', 5, 8, 6, 2], ['#9aa0a8', 6, 3, 4, 2], ['#ff8a3a', 7, 1, 2, 2]],
+  flashbang: [['#c8ccd4', 5, 3, 6, 11], ['#6a707a', 5, 6, 6, 1], ['#6a707a', 5, 10, 6, 1], ['#9aa0a8', 6, 1, 4, 2]],
+  mine: [['#3d4a2e', 2, 8, 12, 5], ['#4f5d3a', 3, 7, 10, 2], ['#d94a3a', 7, 6, 2, 2], ['#2d3036', 2, 12, 12, 1]],
+  charge: [['#c8b890', 3, 5, 10, 7], ['#2d3036', 3, 8, 10, 1], ['#2d3036', 9, 3, 1, 3], ['#3cff6a', 5, 6, 2, 1]],
+  flares: [['#e8621a', 6, 3, 4, 10], ['#f2e6c4', 6, 3, 4, 2], ['#c84a14', 6, 11, 4, 2]],
+  missiles: [['#9aa0a8', 2, 6, 11, 4], ['#d94a3a', 12, 6, 3, 4], ['#55595f', 1, 5, 2, 6]],
+  minirockets: [['#9aa0a8', 1, 3, 10, 2], ['#9aa0a8', 3, 7, 10, 2], ['#9aa0a8', 1, 11, 10, 2], ['#f2c230', 11, 3, 2, 2], ['#f2c230', 13, 7, 2, 2], ['#f2c230', 11, 11, 2, 2]],
+  nukes: [['#3a3e46', 2, 5, 9, 6], ['#3a3e46', 10, 6, 4, 4], ['#f2c230', 4, 6, 4, 4], ['#1a1a1a', 5, 7, 2, 2], ['#55595f', 1, 4, 2, 8]],
   sniper: [['#3d4a2e', 1, 8, 9, 3], ['#2d3036', 9, 8, 7, 1], ['#1a1a1a', 4, 5, 6, 2], ['#7fb8d8', 9, 5, 1, 2], ['#4a3324', 0, 9, 3, 4], ['#1a1a1a', 6, 11, 1, 2]],
   railgun: [['#3a4a6b', 1, 6, 13, 4], ['#7fd8ff', 3, 5, 12, 1], ['#7fd8ff', 3, 10, 12, 1], ['#9adfff', 5, 4, 1, 8], ['#9adfff', 8, 4, 1, 8], ['#9adfff', 11, 4, 1, 8], ['#2d3036', 2, 10, 2, 4]],
   overcharge: [['#3d4a3a', 1, 4, 10, 8], ['#2d3036', 10, 3, 4, 10], ['#7dffb0', 14, 5, 2, 6], ['#7dffb0', 2, 3, 8, 1], ['#7dffb0', 2, 12, 8, 1]],
@@ -720,7 +791,7 @@ function potteryIcon(obj, clay, glaze = 0, { lit = false, raw = false, wet = fal
 }
 function iconFor(kind) {
   if (scrollOf(kind)) return pixelIcon('scroll');
-  if (ammoOf(kind)) return pixelIcon(kind === 'ammo:arrows' && ICONS.arrow ? 'arrow' : 'ammo');
+  if (ammoOf(kind)) return pixelIcon(kind === 'ammo:arrows' && ICONS.arrow ? 'arrow' : ICONS[ammoOf(kind)] ? ammoOf(kind) : 'ammo'); // (grenades and such have their own)
   if (FOOD[kind]?.cookedFrom && ICONS[FOOD[kind].cookedFrom] && !ICONS[kind]) { // cooked: the raw food, browned
     const c = pixelIcon(FOOD[kind].cookedFrom);
     const ctx = c.getContext('2d');
@@ -842,9 +913,34 @@ const bowDraw = { left: 0, right: 0 }; // how far you've drawn a bow in each han
 
 // ---------- what other things in the world look like right now (from the game's snapshots) ----------
 const remote = {
-  mobs: new Map(), arrows: new Map(), drops: new Map(), fireballs: new Map(), sacks: new Map(), players: new Map(), messes: new Map(), drones: new Map(), storms: new Map(), backpacks: new Map(),
+  mobs: new Map(), arrows: new Map(), drops: new Map(), fireballs: new Map(), sacks: new Map(), players: new Map(), messes: new Map(), drones: new Map(), storms: new Map(), backpacks: new Map(), grenades: new Map(), fires: new Map(),
   npcs: new Map(), // the Fantasy Town's people (npcs.js)
+  roster: [], // players too far away to be in snapshots: { id, name, x?, z? } (once a second; no x/z when invisible)
 };
+// Riding a guided nuke (game.js `guide` messages): the view goes to its nose and the mouse steers it (your yaw and
+// pitch in `state`); your body stands still where you were. A click sets it off.
+const guideEl = document.createElement('div');
+guideEl.id = 'guide';
+guideEl.hidden = true;
+document.body.appendChild(guideEl);
+function setGuide(id) {
+  if (id && !guide) {
+    guide = { id, saved: { yaw: player.yaw, pitch: player.pitch }, t: 0 };
+    guideEl.hidden = false;
+  } else if (!id && guide) {
+    player.yaw = guide.saved.yaw; // (back in your own head, facing the way you were)
+    player.pitch = guide.saved.pitch;
+    guide = null;
+    guideEl.hidden = true;
+  }
+}
+/** Where the world loads and draws around: you, or the nuke you're riding. */
+function viewCenter() {
+  const f = guide && remote.fireballs.get(guide.id);
+  return f ? f.pos : player.pos;
+}
+/** Everyone else online: those near enough to be in snapshots, then the rest from the roster. */
+const othersOnline = () => [...remote.players.values(), ...remote.roster.filter((r) => !remote.players.has(r.id))];
 
 function syncMap(map, list, create, update, removed) {
   const seen = new Set();
@@ -868,6 +964,7 @@ const nearMe = (p, r) => Math.hypot(p.x - camera.position.x, p.y - camera.positi
 
 function applySnap(s) {
   bobbers = s.players.filter((p) => p.bobber).map((p) => ({ id: p.id, ...p.bobber }));
+  if (s.roster) remote.roster = s.roster;
   time = s.time;
   rate = s.rate;
   syncMap(remote.mobs, s.mobs, (d) => {
@@ -884,7 +981,7 @@ function applySnap(s) {
     m.vel.y = d.vy;
   });
   syncMap(remote.arrows, s.arrows, (d) => {
-    if (soundsOn()) sound.play('bow', { pos: at(d) });
+    if (soundsOn() && nearMe(d, 40)) sound.play('bow', { pos: at(d) });
     return { id: d.id, pos: at(d), vel: {} };
   }, (a, d) => {
     if (soundsOn() && d.stuck && !a.stuck) sound.play('thunk', { pos: at(d) });
@@ -892,7 +989,7 @@ function applySnap(s) {
   });
   syncMap(remote.drops, s.drops, (d) => ({ id: d.id, kind: d.kind, body: { pos: at(d) }, age: 0 }), (o, d) => { o.target = at(d); o.dir = d.dir || null; });
   syncMap(remote.fireballs, s.fireballs, (d) => {
-    if (soundsOn() && !nearMe(d, 2.5) && d.kind === 'fireball') sound.play('fireball', { pos: at(d) }); // your own played when you shot
+    if (soundsOn() && !nearMe(d, 2.5) && nearMe(d, 40) && d.kind === 'fireball') sound.play('fireball', { pos: at(d) }); // your own played when you shot
     const fb = { id: d.id, kind: d.kind, pos: at(d) };
     effects.addFireball(fb);
     return fb;
@@ -927,9 +1024,17 @@ function applySnap(s) {
     return { id: d.id, pos: at(d), model };
   }, (o, d) => { o.target = at(d); o.yaw = d.yaw; o.carrying = d.carrying; }, (o) => scene.remove(o.model));
   syncMap(remote.sacks, s.sacks, (d) => {
-    if (soundsOn() && !nearMe(d, 2.5)) sound.play('throw', { pos: at(d) });
+    if (soundsOn() && !nearMe(d, 2.5) && nearMe(d, 40)) sound.play('throw', { pos: at(d) });
     return { id: d.id, pos: at(d) };
   }, (o, d) => { o.target = at(d); });
+  // Grenades, mines, charges and flares (grenades.js): a little model each; flares and armed mines glow.
+  syncMap(remote.grenades, s.grenades || [], (d) => {
+    const model = buildHeldModel(`grenade:${d.kind}`, heldMaterial) || new THREE.Group();
+    model.position.set(d.x, d.y, d.z);
+    scene.add(model);
+    return { id: d.id, kind: d.kind, pos: at(d), model, spin: Math.random() * 6 };
+  }, (o, d) => { o.target = at(d); o.armed = d.armed; o.chute = d.chute; o.stuck = d.stuck; }, (o) => scene.remove(o.model));
+  syncMap(remote.fires, s.fires || [], (d) => ({ id: d.id, pos: at(d), r: d.r }), (o, d) => { o.pos = at(d); o.r = d.r; });
   syncMap(remote.npcs, s.npcs || [], (d) => {
     const body = new Body(world, 0.3, 1.8);
     body.pos = at(d);
@@ -943,8 +1048,8 @@ function applySnap(s) {
     Object.assign(p, {
       name: d.name, target: at(d), yaw: d.yaw, pitch: d.pitch, crouch: d.crouch, phone: d.phone, hands: d.hands, dead: d.dead,
       surge: d.surge, grapple: d.grapple, buildy: d.buildy, flying: d.flying,
-      invisible: d.invisible, poly: d.poly, scale: d.scale ?? 1, stone: d.stone, chill: d.chill, voice: d.voice ?? null, ult: d.ult || null,
-      sw: d.sw, mine: d.mine ?? null, draw: d.draw || 0, worn: d.worn || null, look: d.look || null, tall: d.tall ?? 10,
+      invisible: d.invisible, poly: d.poly, scale: d.scale ?? 1, stone: d.stone, chill: d.chill, burning: !!d.burning, voice: d.voice ?? null, ult: d.ult || null,
+      sw: d.sw, mine: d.mine ?? null, draw: d.draw || 0, reload: d.reload || null, worn: d.worn || null, look: d.look || null, tall: d.tall ?? 10,
     });
     p.body.height = (d.crouch ? 1.5 : 1.8) * (d.scale ?? 1);
     p.body.halfW = 0.3 * (d.scale ?? 1);
@@ -1008,6 +1113,7 @@ function smoothRemote(dt) {
   }
   for (const f of remote.fireballs.values()) ease(f);
   for (const s of remote.sacks.values()) ease(s);
+  for (const g of remote.grenades.values()) ease(g);
   for (const d of remote.drones.values()) ease(d);
   for (const p of remote.players.values()) p.moved = ease(p);
   for (const n of remote.npcs.values()) n.moved = ease(n);
@@ -1040,6 +1146,7 @@ function onMessage(m) {
       shake = Math.max(shake, 0.08);
       sound.play('hurt');
       break;
+    case 'guide': setGuide(m.id); break; // riding a guided nuke, or back home (game.js `_endGuide`)
     case 'teleport': // the game moved you (/teleport)
       player.pos = { ...m.pos };
       player.vel = { x: 0, y: 0, z: 0 };
@@ -1089,6 +1196,7 @@ function onMessage(m) {
       sound.play('deny');
       break;
     case 'leases': setLeases(m.list); break; // someone's land changed (leases.js)
+    case 'sky': sky.set(m.sky); break; // /sun, /moon or /ring (celestial.js)
     case 'settings':
       setTuning(loadSettings(m.settings));
       settingsPanel.update();
@@ -1126,6 +1234,34 @@ function onMessage(m) {
 // Pop-up kinds that come with a sound ('coin' plays from the sparkle everyone sees).
 const MSG_SOUNDS = { found: 'pickup', quest: 'ui', questDone: 'level', craft: 'pickup', cook: 'ui', clay: 'pickup', pottery: 'ui', heal: 'eat', level: 'level', coin: null, cough: 'cough', sneeze: 'sneeze', join: 'join', sick: 'eat', trait: 'ui', ammo: 'ammo', surge: 'ui', weird: 'respawn', vault: 'pickup', lost: 'deny', bed: 'ui', buildy: 'ui', order: 'ui', buy: 'pickup', armor: 'ui', delivery: 'pickup', deny: 'deny', flap: 'level', stolen: 'caw' };
 
+// A white flash over everything (flashbangs, the nuke): `whiteout(seconds, strength)`, faded each frame.
+const whiteEl = document.createElement('div');
+whiteEl.id = 'whiteout';
+document.body.appendChild(whiteEl);
+let white = { t: 0, max: 1, k: 0 };
+function whiteout(seconds, k) {
+  if (k * seconds <= white.k * white.t) return;
+  white = { t: seconds, max: seconds, k: Math.min(1, k) };
+}
+function updateWhiteout(dt) {
+  white.t = Math.max(0, white.t - dt);
+  const o = white.t > 0 ? white.k * Math.pow(white.t / white.max, 0.6) : 0;
+  const v = o.toFixed(3);
+  if (whiteEl.style.opacity !== v) whiteEl.style.opacity = v;
+}
+/** How hard a flash at `c` hits your eyes (0-1): close, and looking at it, is worst; walls block it (game.js `_flashSeen` does the blinding). */
+function flashHere(c, reach) {
+  const eye = camera.position;
+  const d = Math.hypot(c.x - eye.x, c.y - eye.y, c.z - eye.z);
+  if (d > reach) return 0;
+  const to = new THREE.Vector3(c.x - eye.x, c.y - eye.y, c.z - eye.z).normalize();
+  if (d > 0.6 && world.raycast(eye, to, d - 0.4)) return 0;
+  const look = camera.getWorldDirection(new THREE.Vector3());
+  const dot = look.dot(to);
+  return Math.min(1, (1 - d / reach) * 1.4) * (dot > 0 ? 0.5 + 0.5 * dot : 0.3);
+}
+const tracerCount = new Map(); // shooter id -> machine-gun rounds fired (every `tracerEvery`th is a tracer)
+
 function applyFx(m) {
   const pos = { x: m.x, y: m.y, z: m.z };
   const fxSound = { explode: ['explode', 8], fizzle: ['fizzle', 3], puff: ['poof', 3], splat: ['splat', 3], sparkle: ['sparkle', 3], feathers: ['pillow', 3], poop: ['poop', 3] }[m.fx];
@@ -1160,6 +1296,13 @@ function applyFx(m) {
           effects.beam(m.o, e, 0x7fd8ff, 0.09, 0.7, 0.8);
           effects.beam(m.o, e, 0xffffff, 0.03, 0.45, 1);
         }
+      } else if (gun.tracer && settings.tracerEvery > 0) { // the machine gun: every so many rounds is a tracer, glowing all the way
+        const n = (tracerCount.get(m.by) || 0) + 1;
+        tracerCount.set(m.by, n);
+        for (const e of m.ends) {
+          if (n % settings.tracerEvery === 0) effects.tracer(m.o, e);
+          else effects.beam(m.o, e, 0xffe9a8, 0.012, 0.07, 0.85);
+        }
       } else {
         for (const e of m.ends) effects.beam(m.o, e, 0xffe9a8, 0.012, 0.07, 0.85);
       }
@@ -1169,6 +1312,30 @@ function applyFx(m) {
     case 'cast': // someone cast a spell
       sound.play(m.spell === 'fireball' ? 'fireball' : 'spell', { pos, p: { missile: 1.4, lightning: 0.8, stoneskin: 0.6, invisibility: 1.6, icebolt: 1.8, blizzard: 0.5, flight: 1.3, teleport: 1.5, dragon: 0.5, blind: 0.9, shrink: 1.2, enlarge: 0.7, polymorph: 1, hallucinate: 1.1 }[m.spell] ?? 1 });
       break;
+    // Grenades (grenades.js) and the big one.
+    case 'toss': if (m.by !== myId) sound.play('throw', { pos }); break;
+    case 'clink': sound.play('clink', { pos, ref: 2 }); break;
+    case 'stick': sound.play('stick', { pos, ref: 2 }); break;
+    case 'armed': sound.play('beep', { pos, ref: 2 }); break; // a mine is live
+    case 'detonator': if (m.by !== myId) sound.play('detonator', { pos, ref: 2 }); break;
+    case 'flareHit': effects.burn(m.x, m.y, m.z, 0.6, 1); sound.play('fireball', { pos, volume: 0.4 }); break;
+    case 'fireBurst': effects.fireBurst(m.x, m.y, m.z, m.r); sound.play('whoosh', { pos, ref: 4 }); break;
+    case 'flashbang': {
+      effects.flashbang(m.x, m.y, m.z);
+      sound.play('flashbang', { pos, ref: 8 });
+      const k = flashHere(m, settings.flashRadius);
+      if (k > 0) { whiteout(2 + k * 6, 0.6 + k * 0.4); if (k > 0.4) sound.play('tinnitus', { volume: k }); }
+      break;
+    }
+    case 'nuke': { // a white flash, a fireball and a mushroom cloud, a shockwave; heard (and felt) from far away
+      effects.nuke(m.x, m.y, m.z, m.radius);
+      const d = Math.hypot(m.x - camera.position.x, m.y - camera.position.y, m.z - camera.position.z);
+      if (d < 300) sound.play('nukeBoom', { volume: Math.max(0.15, 1 - d / 300) });
+      const k = flashHere(m, 250);
+      if (k > 0) whiteout(1.5 + k * 2.5, 0.5 + k * 0.5);
+      shake = Math.max(shake, Math.max(0, 0.6 * (1 - d / 150)));
+      break;
+    }
     case 'chain': // chain lightning: a crackling line through everything it hit
       for (let i = 1; i < m.points.length; i++) effects.zap(m.points[i - 1], m.points[i]);
       sound.play('zap', { pos: m.points[1] });
@@ -1230,6 +1397,7 @@ function sendState() {
     type: 'state', x: p.x, y: p.y, z: p.z, yaw: player.yaw, pitch: player.pitch,
     crouch: player.crouching, flying: player.flying, hands: player.hands, phone: multiplayer && phoneOut,
     grapple: player.grapple, voice: voiceMode, sw: mySwings, mine: myMineHand, draw: Math.round(Math.max(bowDraw.left, bowDraw.right) * 10) / 10,
+    view: renderDistance * CS, // (the game sends you what's this close: game.js `_sendSnapshot`)
   });
 }
 sendState();
@@ -1257,7 +1425,7 @@ function updateNetStatus() {
     netStatus.textContent = `${conn.closeReason} Reload the page to reconnect.`;
     netStatus.classList.add('error');
   } else if (multiplayer) {
-    netStatus.textContent = `Multiplayer on ${location.host} · ${remote.players.size + 1} online`;
+    netStatus.textContent = `Multiplayer on ${location.host} · ${othersOnline().length + 1} online`;
   } else {
     netStatus.textContent = 'Single player (no multiplayer server here)';
   }
@@ -1593,7 +1761,7 @@ let clientTab = store.get('game:client-tab') || 'controls';
 let played = false; // been in the game yet? (before that, losing the mouse shows the title card)
 const KEYS = [
   ['WASD', 'Move'], ['Mouse', 'Look'], ['Space', 'Jump, swim up, fly up'], ['Shift', 'Sprint (also flies faster)'],
-  ['C', "Crouch (won't walk off edges), fly down, dive"], ['F', 'Toggle flying (Buildy Bois, or with the Flying spell)'], ['K', 'Recipe book'], ['R', 'Reload the gun in your hand (then click with the ammo in your other hand, and R again); with no gun, crafting'], ['B', 'Buildy Boi mode on/off (10 s)'],
+  ['C', "Crouch (won't walk off edges), fly down, dive"], ['F', 'Toggle flying (Buildy Bois, or with the Flying spell)'], ['K', 'Recipe book'], ['R', 'Reload the gun in your hand (then click with the ammo in your other hand, and R again); with no gun, crafting'], ['B', 'Buildy Boi mode on/off (a few seconds)'],
   ['Q / E (tap)', 'Choose what\'s in your left / right hand (drag things onto that hand\'s hotbar)'], ['Q / E (hold) + scroll', 'Switch to the next thing on that hand\'s hotbar'], ['Left / right click', 'Use your left / right hand: place, mine (hold), attack, cast, fire, eat, read a scroll, put on armor, open your phone. Right-clicking a door, bed, counter, Cold Wallet or printer uses it. Click a townsperson to talk'],
   ['Right click (hold)', 'Aim down sights with a two-handed gun or bow'], ['Middle click', 'Put the block you\'re looking at in your right hand'],
   ['Scroll wheel', 'Pick a spell (or none, so empty hands punch and mine)'], ['G (hold)', 'Wash any dirty dish (near water)'],
@@ -1833,12 +2001,15 @@ function completeConsole() {
   const words = text.split(' ');
   const last = words[words.length - 1].toLowerCase();
   const cmd = commandOf(words[0].replace(/^\//, ''));
-  const names = [identity.name, ...[...remote.players.values()].map((p) => p.name)];
+  const names = [identity.name, ...othersOnline().map((p) => p.name)];
   const options = words.length === 1
     ? Object.entries(COMMANDS).flatMap(([k, c]) => [k, ...(c.aliases || [])]).map((k) => `/${k}`)
     : cmd === 'give' ? [...(words.length === 2 ? names : []), ...allItems().flatMap((i) => [i.word, i.name.toLowerCase().replace(/[^a-z0-9]/g, '')])] // (short ids, and full names run together)
       : cmd === 'summon' ? [...(words.length === 2 ? names : []), ...MOB_WORDS]
         : cmd === 'ultimate' ? (words.length === 2 ? ULT_WORDS : [])
+          : cmd === 'sun' || cmd === 'moon' ? (/^colou?r$/i.test(words[words.length - 2]) ? Object.keys(SKY_COLORS) // (after "color", with or without a number before it)
+            : words.length === 2 ? ['color', 'size', 'random'] : words.length === 3 && /^\d+$/.test(words[1]) ? ['color', 'size'] : [])
+            : cmd === 'ring' ? (words.length === 2 ? ['on', 'off', 'random', 'color', 'size', 'width', 'tilt'] : words.length === 3 && /^colou?r$/i.test(words[1]) ? Object.keys(SKY_COLORS) : [])
           : cmd === 'land' ? (words.length === 2 ? ['allow', 'deny', 'release'] : words.length === 3 && /^(allow|deny)$/i.test(words[1]) ? ['place', 'break', 'modify'] : [])
             : [...names, ...PLACES];
   const matches = [...new Set(options.filter((o) => o.toLowerCase().startsWith(last)))];
@@ -2915,6 +3086,7 @@ function renderSheet() {
   if (player.effects.headache > 0) conds.append(el('div', '', `🤕 Headache: ${player.effects.headache}s left`));
   if (player.effects.flap > 0) conds.append(el('div', '', `🐦 Flappy: ${player.effects.flap}s left (tap Space in mid-air)`));
   if (player.effects.upset > 0) conds.append(el('div', '', `💩 Upset stomach: ${player.effects.upset}s left (half speed)`));
+  if (player.effects.dizzy > 0) conds.append(el('div', '', `💫 Dizzy: ${player.effects.dizzy}s left (the room's spinning)`));
   if (player.worn && TOOLS[player.worn]) conds.append(el('div', '', `🛡 Wearing ${TOOLS[player.worn].name}: hits hurt ${Math.round(TOOLS[player.worn].armor)}% less${TOOLS[player.worn].speed < 100 ? `, ${100 - TOOLS[player.worn].speed}% slower` : ''} (U takes it off)`));
   if (!conds.childElementCount) conds.append(el('div', '', 'Feeling fine.'));
   const next = document.createElement('div');
@@ -3082,7 +3254,8 @@ document.addEventListener('keydown', (e) => {
 function mapArgs() {
   return [
     { x: player.pos.x, z: player.pos.z, yaw: player.yaw, bed: player.bed, quests: questMapMarks(), leases: [...leases].map(([k, l]) => { const [cx, cz] = k.split(',').map(Number); return { cx, cz, mine: l.owner === identity.uid }; }) },
-    [...remote.players.values()].filter((p) => !p.invisible).map((p) => ({ id: p.id, name: p.name, x: p.pos.x, z: p.pos.z })), // (invisible players stay off the map)
+    [...[...remote.players.values()].filter((p) => !p.invisible).map((p) => ({ id: p.id, name: p.name, x: p.pos.x, z: p.pos.z })), // (invisible players stay off the map)
+      ...remote.roster.filter((r) => !remote.players.has(r.id) && Number.isFinite(r.x)).map((r) => ({ id: r.id, name: r.name, x: r.x, z: r.z }))], // (and far ones, from the roster)
   ];
 }
 function drawMap() {
@@ -3135,6 +3308,7 @@ document.addEventListener('mousedown', (e) => {
   }
   const hand = BUTTON_HAND[e.button];
   if (!hand) return;
+  if (guide) { conn.send({ type: 'detonate' }); return; } // (riding a nuke: any click sets it off)
   buttons[hand] = true;
   useHand(hand);
 });
@@ -3314,9 +3488,24 @@ function updateSpellHud(changed = false) {
 /** One click with a hand. Held-button effects (mining, wand, washing, guns, aiming) run in the frame loop. */
 function useHand(hand) {
   const kind = player.hands[hand];
-  if (ammoOf(kind)) { // ammo in hand: a click loads the gun you're reloading (R)
+  if (kind === 'detonator') { // set off your radio charges
+    buttons[hand] = false;
+    conn.send({ type: 'detonate' });
+    swing(hand);
+    sound.play('detonator');
+    return;
+  }
+  if (ammoOf(kind)) { // ammo in hand: a click loads the gun you're reloading (R); a grenade that isn't going in a launcher gets thrown
     buttons[hand] = false;
     if (player.reloading && hand === player.reloading.other) { conn.send({ type: 'reload', op: 'load', hand }); swing(hand); }
+    else if (AMMO[ammoOf(kind)].grenade) {
+      if (ammoCount(player, ammoOf(kind)) > 0) {
+        const o = camera.position.clone().addScaledVector(dir, 0.5);
+        conn.send({ type: 'throw', hand, o: { x: o.x, y: o.y, z: o.z }, d: { x: dir.x, y: dir.y, z: dir.z } });
+        swing(hand);
+        sound.play('throw');
+      }
+    }
     else popup('To reload: hold a gun, press R, then click with the ammo in your other hand (R again when you\'re done)');
     return;
   }
@@ -3763,11 +3952,16 @@ function updateWeaponHud() {
     if (gun && hand === 'right' && isTwoHanded(player.hands.right)) continue; // listed once
     if (!gun) continue;
     const kind = player.hands[hand];
-    const spare = player.buildy ? '∞' : player.ammo[gun.ammo] || 0;
+    const spare = player.buildy ? '∞' : gun.anyGrenade ? GRENADE_KINDS.reduce((n, g) => n + (player.ammo[g] || 0), 0) : player.ammo[gun.ammo] || 0;
     const side = isTwoHanded(kind) ? '⇄' : hand === 'left' ? 'L' : 'R';
+    if (gun.anyGrenade && player.reloading?.gun !== kind) { // the launcher: what's in it, next first
+      const q = player.launcherLoad.map((g) => GRENADE_LETTER[g] || '?').join('');
+      lines.push(`${side} ${gun.name}: [${q.padEnd(GUNS[kind].mag, '·')}] · ${spare} grenades spare${!q ? ' · R to load' : ''}`);
+      continue;
+    }
     if (!usesMag(kind)) lines.push(`${side} ${gun.name}: ${spare} ${AMMO[gun.ammo].name.toLowerCase()}`);
     else if (player.reloading?.gun === kind) lines.push(`${side} ${gun.name}: ${player.mags[kind] || 0}/${GUNS[kind].mag} 🔄 RELOADING (click with the ammo, R when done) · ${spare} spare`);
-    else lines.push(`${side} ${gun.name}: ${player.buildy ? '∞' : `${player.mags[kind] || 0}/${GUNS[kind].mag}`} · ${spare} spare${!player.buildy && !(player.mags[kind] > 0) ? ' · R to reload' : ''}`);
+    else lines.push(`${side} ${gun.name}: ${player.mags[kind] || 0}/${GUNS[kind].mag} · ${spare} spare${!(player.mags[kind] > 0) ? ' · R to reload' : ''}`);
   }
   const text = lines.join('\n');
   if (ammoEl.textContent !== text) ammoEl.textContent = text;
@@ -3818,7 +4012,7 @@ function frame(now) {
     updateVoiceMenu(realDt);
   }
   phoneApps.tick(); // (single player too: CONSUME lives on the phone)
-  const frozen = !player.locked || menuOpen() || phoneOut;
+  const frozen = !player.locked || menuOpen() || phoneOut || !!guide; // (riding a nuke: your body stands still)
   let simDt = 0;
   if (running) {
     const before = { ...player.pos };
@@ -3826,6 +4020,12 @@ function frame(now) {
     const wasGrounded = player.onGround;
     const wasInWater = player.inWater;
     player.update(realDt, frozen || player.effects.polymorph > 0 ? NO_INPUT : undefined, false); // (an infant just sits there)
+    if (player.effects.dizzy > 0 && !frozen && !player.dead && player.onGround) { // dizzy: you stagger from side to side as you go
+      const sway = Math.sin(performance.now() / 700) * settings.dizzySway * Math.min(1, player.effects.dizzy / 3) * realDt;
+      player.pos.x += Math.cos(player.yaw) * sway;
+      player.pos.z -= Math.sin(player.yaw) * sway;
+      if (player.collides?.()) { player.pos.x -= Math.cos(player.yaw) * sway; player.pos.z += Math.sin(player.yaw) * sway; } // (not into walls)
+    }
     // Footsteps, landings and splashes.
     if (player.onGround && !player.flying && !player.dead) {
       stepDist += Math.hypot(player.pos.x - before.x, player.pos.z - before.z);
@@ -3858,6 +4058,12 @@ function frame(now) {
 
   camera.position.set(player.pos.x, player.pos.y + player.eyeHeight, player.pos.z);
   camera.rotation.set(player.pitch, player.yaw, 0);
+  // Dizzy (a flashbang, game.js `_flashbang`): the view sways and rolls (and your aim with it), easing off as it wears off.
+  const dizzy = player.dead ? 0 : Math.min(1, (player.effects.dizzy || 0) / 3);
+  if (dizzy > 0) {
+    const t = performance.now() / 1000;
+    camera.rotation.set(player.pitch + Math.sin(t * 1.7) * 0.07 * dizzy, player.yaw + Math.sin(t * 1.1) * 0.12 * dizzy, Math.sin(t * 0.9) * 0.22 * dizzy);
+  }
   camera.getWorldDirection(dir);
   sound.setListener(camera.position, dir);
   updateAcoustics(realDt);
@@ -3926,27 +4132,29 @@ function frame(now) {
       }
       continue;
     }
-    if (!buttons[hand] || !isGun(kind) || gunCooldown[hand] > 0) continue;
+    if (!buttons[hand] || !isGun(kind) || gunCooldown[hand] > 0 || guide) continue;
     const gun = gunStats(kind, settings);
-    const freeAmmo = ultBuff(myUlt(), 'ammo', false) || player.buildy; // (Fan the Hammer, Boomstick, Bullet Hose; Buildy Bois)
+    const freeAmmo = ultBuff(myUlt(), 'ammo', false); // (Fan the Hammer, Boomstick, Bullet Hose. Buildy Bois still reload)
     const mag = usesMag(kind); // shots come out of the magazine (R reloads it)
     if (player.reloading) continue;
     if (!freeAmmo && (mag ? (player.mags[kind] || 0) < gun.per : ammoCount(player, gun.ammo) < gun.per)) {
       if (emptyT <= 0) {
         emptyT = 0.4;
         sound.play('empty');
-        popup(mag ? `Click. Empty: press R to reload (${ammoCount(player, gun.ammo)} ${AMMO[gun.ammo].name.toLowerCase()} spare)`
+        popup(gun.anyGrenade ? 'Click. Empty: press R, then click with grenades (any kind) in your other hand, and R again'
+          : mag ? `Click. Empty: press R to reload (${ammoCount(player, gun.ammo)} ${AMMO[gun.ammo].name.toLowerCase()} spare)`
           : `Out of ${AMMO[gun.ammo].name.toLowerCase()}: ${AMMO[gun.ammo].town ? 'buy more at a town fletcher' : 'print or order more'}`);
       }
       continue;
     }
     gunCooldown[hand] = gun.cooldown / ultBuff(myUlt(), 'rate', 1);
     if (!freeAmmo) { if (mag) player.mags[kind] -= gun.per; else player.ammo[gun.ammo] -= gun.per; } // shown right away; the game confirms
+    if (!freeAmmo && gun.anyGrenade) player.launcherLoad = player.launcherLoad.slice(1);
     const o = camera.position.clone().addScaledVector(dir, 0.6);
     conn.send({ type: 'fire', hand, aim: aiming, o: { x: o.x, y: o.y, z: o.z }, d: { x: dir.x, y: dir.y, z: dir.z } });
     sound.play(gun.type === 'arrow' ? 'bow' : kind, { volume: 0.8 });
     swing(isTwoHanded(kind) ? 'right' : hand); // (two-handed guns are drawn in the right hand) (no particle flash for your own shots: right in front of the camera they'd fill the screen)
-    shake = Math.max(shake, ({ shotgun: 0.12, rocket: 0.1, railgun: 0.15, overcharge: 0.2, machinegun: 0.006 }[kind] ?? 0.03) * (aiming ? 0.6 : 1)); // (the machine gun only buzzes: it fires too fast for more)
+    shake = Math.max(shake, ({ shotgun: 0.12, rocket: 0.1, railgun: 0.15, overcharge: 0.2, machinegun: 0.006, launcher: 0.08, flaregun: 0.04, homing: 0.1, drunken: 0.12, nuke: 0.2 }[kind] ?? 0.03) * (aiming ? 0.6 : 1)); // (the machine gun only buzzes: it fires too fast for more)
   }
   // Aiming down sights: zoom in a little, slow the mouse to match, and bring the gun to the middle.
   adsT += ((aiming ? 1 : 0) - adsT) * Math.min(1, realDt * 12);
@@ -4075,6 +4283,8 @@ function frame(now) {
     m.rotation.y += realDt * 7;
   }
   for (const [id, m] of sackModels) if (!remote.sacks.has(id)) { scene.remove(m); sackModels.delete(id); }
+  updateGrenades(realDt);
+  updateWhiteout(realDt);
 
   // Delivery drones: spinning rotors, the package underneath until it's handed over, and a buzz.
   droneMaterial.color.setScalar(Math.max(lightMul, 0.3));
@@ -4090,6 +4300,7 @@ function frame(now) {
   if (soundsOn()) {
     for (const f of remote.fireballs.values()) movers.push({ id: `f${f.id}`, kind: f.kind, pos: f.pos });
     for (const d of remote.drones.values()) movers.push({ id: `d${d.id}`, kind: 'drone', pos: d.pos });
+    for (const g of remote.grenades.values()) if (g.kind === 'flare') movers.push({ id: `g${g.id}`, kind: 'flare', pos: g.pos }); // (a hissing flare)
   }
   sound.track(movers);
 
@@ -4192,7 +4403,7 @@ function frame(now) {
       `Game  ${fps} fps   Window ${innerWidth}x${innerHeight}  View ${canvas.clientWidth}x${canvas.clientHeight}  ` +
       `Canvas ${canvas.width}x${canvas.height}  Buffer ${glInfo.drawingBufferWidth}x${glInfo.drawingBufferHeight}  ` +
       `Viewport ${renderer.getCurrentViewport(viewportInfo).z}x${viewportInfo.w}  GPU max ${glLimits.w}x${glLimits.h}  Zoom ${Math.round(devicePixelRatio * 100)}%\n` +
-      `${multiplayer ? `Multiplayer · ${remote.players.size + 1} online` : 'Single player'}   XYZ ${p.x.toFixed(1)} ${p.y.toFixed(1)} ${p.z.toFixed(1)}\n` +
+      `${multiplayer ? `Multiplayer · ${othersOnline().length + 1} online` : 'Single player'}   XYZ ${p.x.toFixed(1)} ${p.y.toFixed(1)} ${p.z.toFixed(1)}\n` +
       `Time ${clockString(time)}   1 ZEC = ${usd(rate)}   Level ${player.level}   Dishes washed ${player.cleaned}\n` +
       `Mobs ${counts.join(' ')}\n` +
       `${player.flying ? 'Flying' : player.crouching ? 'Crouching' : 'Walking'}   ${handLabel('left')} (Q)   ${handLabel('right')} (E)`;

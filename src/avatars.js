@@ -2,7 +2,7 @@
 // a name tag, whatever is in their hands, and poses for walking, crouching and staring at a phone.
 
 import * as THREE from 'three';
-import { part, showInfant } from './mobModels.js';
+import { part, showInfant, GUN_PARTS } from './models.js';
 import { withFlashlight } from './flashlight.js';
 import { isGun, isTwoHanded, TOOLS, meleeStyle } from './items.js';
 import { SKINS, defaultLook, tallScale } from './characters.js';
@@ -20,7 +20,74 @@ function holdPose(kind) {
 }
 const SWING_TIME = 0.3; // seconds for one swing of the arm
 /** How hard each gun kicks your arms up when it fires (radians at the moment of the shot, easing back). The machine gun barely moves, so it stays on target. */
-const RECOIL = { sniper: 0.15, pistol: 0.07, shotgun: 0.16, machinegun: 0.012, rocket: 0.12, railgun: 0.12, overcharge: 0.14 };
+const RECOIL = { sniper: 0.15, pistol: 0.07, shotgun: 0.16, machinegun: 0.012, rocket: 0.12, railgun: 0.12, overcharge: 0.14, launcher: 0.14, flaregun: 0.1, homing: 0.12, drunken: 0.1, nuke: 0.18 };
+// Reloading (game.js `_reload`, snapshot `reload` { gun, hand, loads }): the gun comes up in front of you, canted
+// towards your other hand, which holds what goes in (GUN_PARTS `hand`). Starting drops the old magazine, each load
+// pushes one in (a new `loads` count), and finishing works the slide, pump, handle or bolt.
+const DROP_TIME = 0.6; // seconds an empty magazine takes to fall away
+const LOAD_TIME = 0.45; // one load: the hand goes to the gun, the magazine (or shell) slides in, the hand comes back
+const RACK_TIME = 0.4; // working the action when you finish
+const ease = (u) => { const v = Math.max(0, Math.min(1, u)); return v * v * (3 - 2 * v); };
+const _q = new THREE.Quaternion();
+const _down = new THREE.Vector3();
+const _v = new THREE.Vector3();
+/** The item model in a hand (not the Titan Blade's glow shell). */
+const heldIn = (a, hand) => a.hold[hand].children.find((c) => !c.userData.glow) || null;
+
+/** Follows `p.reload`: a new one starts, a new `loads` count is a load, and its end works the action. */
+function trackReload(a, rl, dt) {
+  const key = rl ? `${rl.gun}|${rl.hand}` : '';
+  if (key !== (a.rlKey || '')) {
+    if (a.rl && !rl) a.rack = { gun: a.rl.gun, t: 0 };
+    a.rl = rl ? { gun: rl.gun, hand: rl.hand, other: rl.hand === 'left' ? 'right' : 'left', t: 0, loads: rl.loads || 0, loadT: -1, magIn: false, dropped: !!rl.loads } : null;
+    a.rlKey = key;
+  }
+  if (a.rl) {
+    a.rl.t += dt;
+    if ((rl.loads || 0) !== a.rl.loads) { a.rl.loads = rl.loads || 0; a.rl.loadT = 0; } else if (a.rl.loadT >= 0) a.rl.loadT += dt;
+    if (a.rl.loadT >= LOAD_TIME) { a.rl.loadT = -1; a.rl.magIn = true; }
+  }
+  if (a.rack && (a.rack.t += dt) > RACK_TIME) a.rack = null;
+}
+
+/** Puts a gun's moving parts (GUN_PARTS) where this moment of reloading wants them. */
+function animateGun(a) {
+  for (const hand of ['left', 'right']) {
+    const g = heldIn(a, hand);
+    const def = g && GUN_PARTS[a.shown[hand]];
+    if (!def) continue;
+    const { mag, round, action } = g.userData;
+    const rl = a.rl?.gun === a.shown[hand] ? a.rl : null;
+    const rack = !rl && a.rack?.gun === a.shown[hand] ? a.rack : null;
+    const out = _v.fromArray(def.out || [0, 0, -1]);
+    const u = rl && rl.loadT >= 0 ? rl.loadT / LOAD_TIME : -1; // how far through a load (-1: not loading)
+    if (mag) {
+      mag.position.copy(mag.userData.home);
+      mag.visible = true;
+      if (rl && u >= 0.4) mag.position.addScaledVector(out, 0.25 * (1 - ease((u - 0.4) / 0.5))); // sliding in
+      else if (rl && u >= 0) mag.visible = rl.magIn; // (the hand's on its way with the new one)
+      else if (rl && !rl.magIn) {
+        if (def.drop && !rl.dropped && rl.t < DROP_TIME) { // the old one pops out and falls
+          g.getWorldQuaternion(_q);
+          _down.set(0, -1, 0).applyQuaternion(_q.invert());
+          mag.position.addScaledVector(out, 0.1 * Math.min(1, rl.t / 0.08)).addScaledVector(_down, 3 * rl.t * rl.t);
+        } else mag.visible = false;
+      }
+    }
+    if (round) { // a shell, pushed in and gone
+      round.visible = u >= 0.35 && u < 0.9;
+      if (round.visible) round.position.copy(round.userData.home).addScaledVector(out, 1 - ease((u - 0.35) / 0.5));
+    }
+    if (action) {
+      const travel = _v.fromArray(def.travel);
+      let k = 0;
+      if (rl && def.open) k = ease(rl.t / 0.2); // a bolt, held open
+      else if (rack) k = def.open ? 1 - ease(rack.t / RACK_TIME) : Math.sin(Math.min(1, rack.t / RACK_TIME) * Math.PI); // shut it / rack it
+      action.position.copy(action.userData.home).addScaledVector(travel, k);
+    }
+  }
+}
+
 /** The Titan Blade's glow: a see-through gold shell round the (giant) item you hold. */
 const GLOW = new THREE.MeshBasicMaterial({ color: 0xffd257, transparent: true, opacity: 0.35, depthWrite: false, blending: THREE.AdditiveBlending });
 
@@ -274,10 +341,15 @@ export class Avatars {
       a.root.position.set(p.pos.x, p.pos.y, p.pos.z);
       a.root.rotation.y = p.yaw;
 
-      // Held items (a two-handed one is drawn once, in the right hand)
+      trackReload(a, p.reload || null, dt);
+      // Held items (a two-handed one is drawn once, in the right hand; reloading, it's in its own hand, and the
+      // other hand's ammo shows as what goes in: a magazine, a shell, a rocket...)
       for (const hand of ['left', 'right']) {
         let kind = p.hands?.[hand] || 'empty';
-        if (hand === 'left' && isTwoHanded(kind)) kind = 'empty';
+        if (a.rl) {
+          if (hand === a.rl.other && kind.startsWith('ammo:')) kind = `reload:${a.rl.gun}`;
+          else if (hand === a.rl.other && isTwoHanded(kind)) kind = 'empty';
+        } else if (hand === 'left' && isTwoHanded(kind)) kind = 'empty';
         if (a.shown[hand] === kind) continue;
         a.shown[hand] = kind;
         a.hold[hand].clear();
@@ -322,7 +394,8 @@ export class Avatars {
       const sw = p.sw || { left: 0, right: 0 };
       if (a.swSeen) for (const hand of ['left', 'right']) if (sw[hand] !== a.swSeen[hand]) a.swingT[hand] = SWING_TIME;
       a.swSeen = { ...sw };
-      const twoHanded = isTwoHanded(p.hands?.right);
+      animateGun(a);
+      const twoHanded = !a.rl && isTwoHanded(p.hands?.right);
       const arc = (hand) => {
         a.swingT[hand] = Math.max(0, a.swingT[hand] - dt);
         const t = a.swingT[twoHanded ? 'right' : hand] || a.swingT[hand];
@@ -370,6 +443,27 @@ export class Avatars {
           continue;
         }
         ['left', 'right'].forEach((hand, i) => {
+          if (a.rl) {
+            // Reloading: the gun up in front of you, canted so its underside faces the other hand; that hand
+            // holds the next magazine (or shell) and reaches over with it for each load.
+            arc(hand);
+            const inward = i ? -1 : 1; // (rotation.z towards the middle)
+            const isGun = hand === a.rl.hand;
+            const u = a.rl.loadT >= 0 ? a.rl.loadT / LOAD_TIME : -1;
+            const reach = !isGun && u >= 0 ? Math.sin(u * Math.PI) : 0;
+            const low = p.firstPerson ? 0.15 : 0; // (your own, from just in front of your face: lower, so it's not all you see)
+            const up = Math.max(0, pitch) * 0.5; // (looking up lifts it; looking down, you look down at your hands)
+            const shoulder = (isGun ? 0.55 : 0.45) - low + up + reach * (0.3 + low * 1.5);
+            const fore = (isGun ? 1.5 : 1.35) + reach * 0.1;
+            a.arms[i].rotation.set(shoulder, 0, inward * (isGun ? 0.15 : 0.2));
+            a.elbows[i].rotation.set(fore, 0, inward * ((isGun ? 0.55 : 0.6) + reach * 0.35)); // (forearms across the front)
+            a.hold[hand].position.set(0, -0.38, -0.08);
+            if (isGun) a.hold[hand].rotation.set(0.5 - low - shoulder - fore + up, 0, -inward * 0.7);
+            else a.hold[hand].rotation.set(-shoulder - fore + reach * 0.4, 0, 0);
+            const ammo = !isGun && heldIn(a, hand);
+            if (ammo) ammo.visible = !(u >= 0.45 && u < 0.85); // (it's gone into the gun; then there's the next one)
+            return;
+          }
           const pose = holdPose(twoHanded ? p.hands.right : p.hands?.[hand]);
           const walk = (i ? swing : -swing) * 0.8 * (pose ? 0.25 : 1);
           if (pose?.aim) {
@@ -378,7 +472,8 @@ export class Avatars {
             arc(hand); // (counts the swing timer down)
             const gun = twoHanded ? p.hands.right : p.hands[hand];
             const t = a.swingT[twoHanded ? 'right' : hand] / SWING_TIME; // 1 at the shot, easing to 0
-            const recoil = (RECOIL[gun] ?? 0.04) * t * t; // a kick that springs back, not a swing
+            const racking = a.rack?.gun === gun ? Math.sin(Math.min(1, a.rack.t / RACK_TIME) * Math.PI) * 0.12 : 0; // (working the action jolts it)
+            const recoil = (RECOIL[gun] ?? 0.04) * t * t + racking; // a kick that springs back, not a swing
             const support = twoHanded && !i; // the left hand steadies a two-handed gun from underneath
             const shoulder = (support ? 0.62 : 0.5) + pitch * 0.55 + walk * 0.3;
             const fore = Math.PI / 2 + pitch - (support ? 0.12 : 0) + recoil; // the forearm's angle from hanging straight down

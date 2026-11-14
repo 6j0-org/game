@@ -1,7 +1,7 @@
 // Turns a chunk into vertex arrays: face culling, per-vertex ambient occlusion,
 // and atlas UVs. Returns plain typed arrays; main.js wraps them in Three.js geometry.
 
-import { AIR, WATER, BLOCKS, SEE_THROUGH, PLANT, SHAPES, LAVA_LAMP, FLUORESCENT, TILE_COUNT, FLUID, LEAFY, GLOWS, shapeBoxes, isLitLuminary, CAMPFIRE } from './blocks.js';
+import { AIR, WATER, BLOCKS, SEE_THROUGH, PLANT, SHAPES, LAVA_LAMP, FLUORESCENT, TILE_COUNT, FLUID, LEAFY, GLOWS, shapeBoxes, isLitLuminary, CAMPFIRE, WORLD_EDGE } from './blocks.js';
 import { CS, CH, caveShade } from './world.js';
 
 // Corner order per face forms a strip: triangles (0,1,2) and (2,1,3).
@@ -101,6 +101,9 @@ function addShape(buf, x, y, z, id, get) {
   }
 }
 
+/** The edge of the world (an invisible wall) hides nothing: the last chunks show their sides, cut away. */
+const edgeless = (id) => (id === WORLD_EDGE ? AIR : id);
+
 export function buildChunkMesh(world, chunk) {
   const solid = newBuf();
   const water = newBuf();
@@ -114,7 +117,7 @@ export function buildChunkMesh(world, chunk) {
   const get = (x, y, z) =>
     x >= 0 && x < CS && z >= 0 && z < CS && y >= 0 && y < CH
       ? data[(y * CS + z) * CS + x]
-      : world.getBlock(ox + x, y, oz + z);
+      : edgeless(world.getBlock(ox + x, y, oz + z));
   const occludes = (x, y, z) => {
     const b = get(x, y, z);
     return b !== AIR && !SEE_THROUGH[b] ? 1 : 0;

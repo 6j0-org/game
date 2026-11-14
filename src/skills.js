@@ -21,9 +21,9 @@ tune('Health & XP', {
 });
 
 /** Skills that aren't an item: punching (an empty hand), spells cast with an empty hand, washing dishes, planting seeds. */
-const SPECIAL = { empty: 'Punch', magic: 'Magic', dishwash: 'Dishwash', plant: 'Plant', pottery: 'Pottery', cooking: 'Cooking', crafting: 'Crafting', quest: 'Questing' };
+const SPECIAL = { empty: 'Punch', magic: 'Magic', dishwash: 'Dishwash', plant: 'Plant', pottery: 'Pottery', cooking: 'Cooking', crafting: 'Crafting', quest: 'Questing', grenade: 'Grenade' };
 /** Titles that don't come out right with "er" on the end. */
-const TITLES = { pottery: 'Potter', rod: 'Fisher', bucket: 'Milker', cooking: 'Chef', crafting: 'Crafter', quest: 'Hero' };
+const TITLES = { pottery: 'Potter', rod: 'Fisher', bucket: 'Milker', cooking: 'Chef', crafting: 'Crafter', quest: 'Hero', grenade: 'Grenadier' };
 /** What a skill (an item kind, or a special one) is called. */
 export const skillName = (kind) => SPECIAL[kind] ?? TOOLS[kind]?.name ?? (kind === 'hand' ? HAND.name : kind);
 /** Your best skill's name + "er": a Wand user is a Wander. Nobody's anything yet: Adventurer. */

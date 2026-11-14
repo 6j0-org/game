@@ -31,6 +31,16 @@
     #scope { position: fixed; inset: 0; pointer-events: none;
       background: radial-gradient(circle at center, transparent 0, transparent min(38vh, 38vw), rgba(0, 0, 0, 0.85) calc(min(38vh, 38vw) + 2px), #000 calc(min(38vh, 38vw) + 24px)); }
     #scope[hidden] { display: none; }
+    /* Riding a guided nuke (main.js setGuide): a green-tinted view through its nose camera, and what to do. */
+    #guide { position: fixed; inset: 0; pointer-events: none; z-index: 5;
+      background: radial-gradient(ellipse at center, rgba(60, 255, 120, 0.06) 40%, rgba(0, 30, 10, 0.55));
+      color: #b8ffcc; font: 600 calc(15px * var(--fs)) ui-monospace, monospace; text-align: center; padding-top: 18px;
+      text-shadow: 0 0 6px rgba(60, 255, 120, 0.8); }
+    #guide[hidden] { display: none; }
+    #guide::after { content: ""; position: absolute; left: 50%; top: 50%; width: 64px; height: 64px; transform: translate(-50%, -50%);
+      border: 2px solid rgba(160, 255, 190, 0.8); border-radius: 4px; }
+    /* Flashbangs and the nuke: everything goes white for a moment (main.js whiteout). */
+    #whiteout { position: fixed; inset: 0; pointer-events: none; z-index: 6; background: #fff; opacity: 0; }
     #scope::before, #scope::after { content: ""; position: absolute; left: 50%; top: 50%; background: rgba(0, 0, 0, 0.85); transform: translate(-50%, -50%); }
     #scope::before { width: min(76vh, 76vw); height: 1px; }
     #scope::after { width: 1px; height: min(76vh, 76vw); }

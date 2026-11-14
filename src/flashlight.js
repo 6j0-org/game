@@ -17,6 +17,7 @@ export const flashUniforms = {
   uLampCount: { value: 0 },
   uLampPos: { value: Array.from({ length: LAMP_MAX }, () => new THREE.Vector3()) },
   uLampColor: { value: Array.from({ length: LAMP_MAX }, () => new THREE.Vector3(1, 0.55, 0.5)) },
+  uLampRange: { value: Array.from({ length: LAMP_MAX }, () => LAMP_RANGE) },
   uLampStrength: { value: 0 },
 };
 
@@ -36,6 +37,7 @@ uniform float uFlashStrength;
 uniform int uLampCount;
 uniform vec3 uLampPos[${LAMP_MAX}];
 uniform vec3 uLampColor[${LAMP_MAX}];
+uniform float uLampRange[${LAMP_MAX}];
 uniform float uLampStrength;
 varying vec3 vFlashWorld;
 ${shader.fragmentShader}`.replace(
@@ -54,7 +56,7 @@ ${shader.fragmentShader}`.replace(
   for (int i = 0; i < ${LAMP_MAX}; i++) {
     if (i >= uLampCount) break;
     float d = length(vFlashWorld - uLampPos[i]);
-    float f = 1.0 - smoothstep(0.3, ${LAMP_RANGE.toFixed(1)}, d);
+    float f = 1.0 - smoothstep(0.3, uLampRange[i], d);
     lamp += f * f * f * uLampColor[i];
   }
   vec3 lampLight = uLampStrength * min(lamp, vec3(1.2));
@@ -80,7 +82,7 @@ export function setFlashlights(sources, daylightMul) {
   flashUniforms.uFlashStrength.value = Math.max(0, 0.85 - daylightMul) * 0.9;
 }
 
-/** This frame's lights (lava lamps, fluorescent panels): [{ pos, color? }], nearest first. They matter less by day. */
+/** This frame's lights (lava lamps, fluorescent panels, flares, fires...): [{ pos, color?, range? }], nearest first. They matter less by day. */
 export const LAVA_LAMP_COLOR = new THREE.Vector3(1, 0.55, 0.5);
 export function setLamps(sources, daylightMul) {
   const n = Math.min(sources.length, LAMP_MAX);
@@ -88,6 +90,7 @@ export function setLamps(sources, daylightMul) {
   for (let i = 0; i < n; i++) {
     flashUniforms.uLampPos.value[i].copy(sources[i].pos);
     flashUniforms.uLampColor.value[i].copy(sources[i].color || LAVA_LAMP_COLOR);
+    flashUniforms.uLampRange.value[i] = sources[i].range || LAMP_RANGE;
   }
   flashUniforms.uLampStrength.value = Math.max(0.05, 0.8 - daylightMul) * 0.6;
 }

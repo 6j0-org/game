@@ -8,6 +8,7 @@
 //   /summon [player] <mob> [count]    creatures, a few blocks in front of you (or them)
 //   /msg <player> <text>              a private message (alias /tell, /w); plain text in the console goes to everyone
 //   /skip                             skip ahead a quarter day (single player)
+//   /sun, /moon, /ring                the sky's suns, moons and ring: how many, colour, size (celestial.js `editSky`)
 // <where>: x z (on the ground) or x y z (~ means "where you are", ~5 "5 more than that"), a player's
 // name, `spawn` (the world spawn), `bed` (your bed), or `town` (the nearest Fantasy Town market).
 
@@ -17,6 +18,7 @@ import { MOB_TYPES } from './mobs.js';
 import { BESTIARY } from './bestiary.js';
 import { SOLID } from './blocks.js';
 import { ULTIMATES } from './ultimates.js';
+import { editSky } from './celestial.js';
 
 tune('World', {
   teleport: [true, 'Teleporting', 'Anyone can use /teleport: to coordinates, a player, the spawn, their bed or the nearest town'],
@@ -31,6 +33,9 @@ export const COMMANDS = {
   msg: { usage: '/msg <player> <text>', desc: 'A private message to one player (anything typed without a / goes to everyone)', aliases: ['tell', 'w'] },
   skip: { usage: '/skip', desc: 'Skips ahead a quarter of a day (single player)' },
   ultimate: { usage: '/ultimate [name]', desc: 'Lets any ultimate go right now, whatever your class (for testing): /ultimate silverware cyclone. With no name, lists them all', aliases: ['ult'] },
+  sun: { usage: '/sun [count | [number] color <c> | [number] size <x> | random]', desc: 'The suns in this world\'s sky: /sun 2, /sun color orange, /sun 2 size 0.5, /sun random. On its own, lists them' },
+  moon: { usage: '/moon [count | [number] color <c> | [number] size <x> | random]', desc: 'The moons: /moon 3, /moon 1 color #ff8844, /moon size 2, /moon 0. On its own, lists them' },
+  ring: { usage: '/ring [on | off | random | color <c> | size <x> | width <x> | tilt <x>]', desc: 'A ring round the world, like a ringed planet\'s: /ring on, /ring size 2.5, /ring width 0.8, /ring tilt 1.2, /ring off' },
   land: { usage: '/land [allow|deny place|break|modify] | /land release', desc: 'Your land (multiplayer): who owns the chunk you\'re in; let others place, break or modify (use doors and garden tools) there, or not; or give it up', aliases: ['lease'] },
 };
 const MAX_GIVE = 9999;
@@ -114,6 +119,12 @@ export function runCommand(game, e, line) {
     else return [{ text: 'Usage: /land, /land allow place, /land deny break, /land allow modify, /land release', error: true }];
     return [];
   }
+  if (cmd === 'sun' || cmd === 'moon' || cmd === 'ring') { // (everyone's sky: game.js `_setSky`)
+    if (args.length && !game.settings.cheats) return [{ text: 'Changing the sky is a cheat command, and those are off on this server (Settings > Server: Cheat commands).', error: true }];
+    const { sky, lines } = editSky(game.sky, cmd, args);
+    if (sky) game._setSky(sky);
+    return lines;
+  }
   if (cmd === 'skip') {
     if (game.multiplayer) return [{ text: 'Skipping time only works in single player (everyone shares the clock).', error: true }];
     const before = game.time;
@@ -186,7 +197,9 @@ export function runCommand(game, e, line) {
   const at = `(${Math.floor(pos.x)}, ${Math.floor(pos.y)}, ${Math.floor(pos.z)})`;
   const to = where ? `${where} ${at}` : at;
   game._teleport(who, pos, who === e ? null : `${e.name} teleported you to ${to}`);
-  return [{ text: who === e ? `Teleported to ${to}` : `Teleported ${who.name} to ${to}` }];
+  const got = who.p.pos; // (where they ended up: no further than the edge of the world)
+  const there = got.x === pos.x && got.z === pos.z ? to : `(${Math.floor(got.x)}, ${Math.floor(got.y)}, ${Math.floor(got.z)}), the edge of the world`;
+  return [{ text: who === e ? `Teleported to ${there}` : `Teleported ${who.name} to ${there}` }];
 }
 
 /**

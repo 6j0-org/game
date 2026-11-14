@@ -4,7 +4,7 @@
 // FISH). Rendering side: Three.js.
 
 import * as THREE from 'three';
-import { part } from './mobModels.js';
+import { part } from './models.js';
 import { WATER } from './blocks.js';
 import { withFlashlight } from './flashlight.js';
 

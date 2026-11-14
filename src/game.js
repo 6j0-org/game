@@ -10,8 +10,8 @@
 // owns everything else and sanity-checks actions (reach, cooldowns, what you're holding).
 
 import { T, tune, bindTunable } from './tuning.js';
-import { World, CH, CS } from './world.js';
-import { Player } from './player.js';
+import { World, CH, CS, outsideWorld, insideWorld } from './world.js';
+import { Player, VIEW_MIN, VIEW_MAX, EYE_HEIGHT } from './player.js';
 import { Mobs, MOB_TYPES } from './mobs.js';
 import { spend, ammoCount, scrollKind, meleeStyle, itemGroup, giveItem } from './items.js';
 import { Drops, Throwables, FOOD, DISHES, TOOLS, TRAITS, itemStats, isMiningKind, itemName, newTrait, dietRefuses, fallHealFor, fallDamageFor, itemCount, blockIdOf, printable, printUsd, BLOCK_PRINTS, shopOffer, grantItem,
@@ -20,6 +20,7 @@ import { SETTINGS, cleanSetting, loadSettings, migrateSettings, SETTINGS_VERSION
 import { Drones } from './drones.js';
 import { SPELLS, isFocus, maxMana, manaRegen, magic, spellCost, spellCooldown, potency as focusPotency, SIZE_SPELLS } from './spells.js';
 import { Fireballs, explode } from './fireballs.js';
+import { Grenades, GRENADES, blastOf } from './grenades.js';
 import { BlockGravity } from './gravity.js';
 import { Accounts } from './accounts.js';
 import { newCharacter, cleanLook } from './characters.js';
@@ -34,7 +35,7 @@ import { AIR, WATER, ICE, FLUID, LAVA, WHEAT, HOTBAR, COLD_WALLET, SOLID, SHAPES
 import { daylight } from './daycycle.js';
 import { nextRate, zecFor, round2 } from './market.js';
 import { STATS, rollStats, statEffects, withBonus, migrateStats } from './stats.js';
-import { GUNS, AMMO, spreadDir, usesMag } from './weapons.js';
+import { GUNS, AMMO, GRENADE_KINDS, isGrenade, spreadDir, usesMag } from './weapons.js';
 import { VoiceRoom } from './voiceroom.js';
 import { runCommand } from './commands.js';
 import { BESTIARY } from './bestiary.js';
@@ -47,15 +48,20 @@ import { cleanQuests, questOffer, offerSeed, questReady, questGoal, questAsk, lo
 import { forageFind } from './forage.js';
 import { MARKET } from './townplan.js';
 import { totalPoints, levelFor, maxHpFor, pointsFor } from './skills.js';
+import { cleanSky, rollSky } from './celestial.js';
 
 export const PROTOCOL = 1;
 const SNAPSHOT_EVERY = 1 / 15; // multiplayer; single-player sends one every tick
+// What each player is sent: things within their view (`p.view`: their render distance, player.js VIEW_MIN..MAX),
+// plus a margin so things don't pop in at the very edge. Players farther away go in a `roster` once a second.
+const VIEW_MARGIN = 16;
+const ROSTER_EVERY = 1; // seconds
 const SAVE_EVERY = 10;
 const PRUNE_EVERY = 5;
 const REACH = 8; // a little generous: reported positions lag behind slightly
 const BREATH_TICK = 0.15; // seconds between puffs of a held Dragon's Breath (each burns breathDamage × this)
 /** What each kind of projectile is called in a death message (guns set their own name on the shot). */
-const PROJECTILE_NAMES = { snowball: 'Blizzard', fireball: 'Fireball', missile: 'Magic Missile', icebolt: 'Icebolt', rocket: 'Rocket Launcher', orb: 'Overcharge Cannon', arrow: 'a bow' };
+const PROJECTILE_NAMES = { snowball: 'Blizzard', fireball: 'Fireball', missile: 'Magic Missile', icebolt: 'Icebolt', rocket: 'Rocket Launcher', orb: 'Overcharge Cannon', arrow: 'a bow', homing: 'Homing Launcher', drunk: 'Drunken Rocket Pod', nuke: 'Guided Nuke' };
 const INVENTORIES = ['food', 'dishes', 'wallet', 'tools', 'blocks', 'scrolls', 'unfired', 'materials'];
 const TEXT_MAX = 200; // characters per text message
 const TEXT_COOLDOWN = 0.4;
@@ -144,8 +150,16 @@ export class Game {
     this.drops = new Drops(this.world, rand);
     this.throwables = new Throwables(this.world);
     this.fireballs = new Fireballs(this.world);
+    this.grenades = new Grenades(this.world); // grenades, mines, radio charges and flares (grenades.js)
+    this.fires = []; // incendiary fires burning on the ground: { id, x, y, z, r, t, owner, skill, weapon, hurtT }
+    this.nextFireId = 1;
     this.drones = new Drones(rand); // CONSUME deliveries in flight
     this.leases = new Leases(store); // land (leases.js): multiplayer only
+    // The sky's suns, moons and ring (celestial.js): rolled from the seed the first time, then saved (/sun, /moon, /ring change it).
+    let sky = null;
+    try { sky = JSON.parse(store.get('game:sky')); } catch { /* a new world */ }
+    this.sky = sky ? cleanSky(sky, seed) : rollSky(seed);
+    if (!sky) store.set('game:sky', JSON.stringify(this.sky));
     this.npcs = new Npcs(this.world, rand); // the Fantasy Town's people (npcs.js), out when someone's near a market
     this.mobs.onHit = (mob, amount, src) => { if (src?.cause === 'player') this._ultCharge(this.players.get(src.byId), T.ultChargeHit); }; // (ultimates.js)
     this.npcs.busy = (key) => [...this.players.values()].some((o) => o.p.jobs.some((j) => j.npc === key)); // away on a job (jobs.js)
@@ -267,6 +281,8 @@ export class Game {
     p.quests = cleanQuests(saved.quests); // (quests.js)
     p.jobs = cleanJobs(saved.jobs); // (jobs.js)
     p.mags = Object.fromEntries(Object.entries(saved.mags || {}).filter(([k, n]) => usesMag(k) && Number.isInteger(n) && n > 0).map(([k, n]) => [k, Math.min(n, GUNS[k].mag)])); // loaded guns
+    p.launcherLoad = (Array.isArray(saved.launcherLoad) ? saved.launcherLoad : []).filter(isGrenade).slice(0, GUNS.launcher.mag); // what's in the Grenade Launcher, in order
+    if (p.launcherLoad.length) p.mags.launcher = p.launcherLoad.length; else delete p.mags.launcher;
     p.lastTill = saved.lastTill && [saved.lastTill.x, saved.lastTill.y, saved.lastTill.z].every(Number.isInteger) ? { x: saved.lastTill.x, y: saved.lastTill.y, z: saved.lastTill.z } : null;
     if (typeof saved.worn === 'string' && isArmor(saved.worn)) { p.worn = saved.worn; p.wornFree = !!saved.wornFree; }
     for (const h of ['left', 'right']) if (typeof saved.hands?.[h] === 'string') p.hands[h] = saved.hands[h];
@@ -286,7 +302,7 @@ export class Game {
     p.stats = withBonus(p.baseStats, p.statBonus);
     p.maxHp = p.maxHpNow(); // (level and Built Different)
     const sp = saved.pos;
-    const resume = saved.seed === this.seed && sp && num(sp.x) && num(sp.y) && num(sp.z) && sp.y > 0;
+    const resume = saved.seed === this.seed && sp && num(sp.x) && num(sp.y) && num(sp.z) && sp.y > 0 && !outsideWorld(Math.floor(sp.x), Math.floor(sp.z)); // (not past the edge, if the world shrank)
     const b = saved.bed;
     if (saved.seed === this.seed && b && [b.x, b.y, b.z].every(Number.isInteger)) p.bed = { x: b.x, y: b.y, z: b.z };
     if (Array.isArray(saved.orders)) {
@@ -314,7 +330,7 @@ export class Game {
     e.lastYou = JSON.stringify(you);
     send({
       type: 'welcome', protocol: PROTOCOL, id: e.id, name: e.name, uid, look: e.look, admin: !!this.accounts.get(uid)?.admin, multiplayer: this.multiplayer,
-      seed: this.seed, time: this.time, rate: this.rate, settings: { ...this.settings }, edits: this.world.allEdits(), legacy: [...this.world.legacy], gen2: [...this.world.gen2], gen3: [...this.world.gen3], leases: this.multiplayer ? this.leases.forClients() : [], pos: { ...p.pos }, hands: { ...p.hands }, you,
+      seed: this.seed, time: this.time, rate: this.rate, settings: { ...this.settings }, edits: this.world.allEdits(), sky: this.sky, legacy: [...this.world.legacy], gen2: [...this.world.gen2], gen3: [...this.world.gen3], leases: this.multiplayer ? this.leases.forClients() : [], pos: { ...p.pos }, hands: { ...p.hands }, you,
     });
     if (this.multiplayer) this._broadcast({ type: 'msg', text: `${e.name} joined`, kind: 'join' }, e);
     if (firstTime) e.send({ type: 'msg', text: traitText(p.traits), kind: 'trait' });
@@ -329,6 +345,7 @@ export class Game {
     const acc = this.accounts.get(e.uid);
     if (acc) { acc.seen = Date.now(); this.accounts._save(); }
     this.voice.drop(id);
+    this._endGuide(e); // (a nuke they were riding flies on, straight)
     this.players.delete(id);
     if (this.multiplayer) this._broadcast({ type: 'msg', text: `${e.name} left`, kind: 'join' });
   }
@@ -373,6 +390,7 @@ export class Game {
       case 'attack': return this._attack(e, msg);
       case 'cast': return this._cast(e, msg);
       case 'throw': return this._throw(e, msg);
+      case 'detonate': return this._detonateMine(e); // the Detonator (radio charges), or a guided nuke you're riding
       case 'eat': return this._eat(e, msg);
       case 'washed': return this._washed(e, msg);
       case 'print': return this._print(e, msg);
@@ -408,6 +426,7 @@ export class Game {
     e.voiceMode = msg.voice === 'whisper' || msg.voice === 'shout' ? msg.voice : null; // holding Z / X (voice.js)
     if (msg.sw && num(msg.sw.left) && num(msg.sw.right)) e.sw = { left: msg.sw.left | 0, right: msg.sw.right | 0 }; // swing counts (avatars.js)
     e.mine = msg.mine === 'left' || msg.mine === 'right' ? msg.mine : null;
+    if (num(msg.view)) p.view = Math.max(VIEW_MIN, Math.min(VIEW_MAX, msg.view)); // how far you can see (snapshots, mob despawning)
     e.draw = num(msg.draw) ? Math.max(0, Math.min(1, msg.draw)) : 0; // how far you've drawn your bow (avatars.js)
     const g = msg.grapple; // where your grappling hook is stuck (for others to see the rope)
     e.grapple = g && [g.x, g.y, g.z].every(num) ? { x: g.x, y: g.y, z: g.z } : null;
@@ -420,6 +439,10 @@ export class Game {
     p.validateHands();
     if (p.dead || !num(msg.x) || !num(msg.y) || !num(msg.z)) return;
     p.pos = { x: msg.x, y: msg.y, z: msg.z };
+    if (outsideWorld(Math.floor(p.pos.x), Math.floor(p.pos.z)) && !(e.teleportT > 0)) { // past the edge (the world shrank, or a client that ignores the wall)
+      const at = insideWorld(p.pos.x, p.pos.z);
+      return this._teleport(e, { ...at, y: this.world.surfaceAt(Math.floor(at.x), Math.floor(at.z)) }, 'That\'s the edge of the world');
+    }
     if (p.pos.y < -30 && p.buildy) { // invincible, even to the void: back to your spawn point
       const pos = this._spawnPoint(e);
       p.spawn(pos); // (spawning keeps your hard hat on)
@@ -567,7 +590,7 @@ export class Game {
       e.send({ type: 'msg', kind: 'buildy', text: 'Never mind' });
     } else {
       e.buildSwitch = { to: !e.p.buildy, t: T.buildySwitch };
-      e.send({ type: 'msg', kind: 'buildy', text: e.p.buildy ? 'Taking off the hard hat… (10 s)' : 'Putting on the hard hat… (10 s)' });
+      e.send({ type: 'msg', kind: 'buildy', text: `${e.p.buildy ? 'Taking off' : 'Putting on'} the hard hat… (${T.buildySwitch} s)` });
     }
     this._sendYou(e);
   }
@@ -627,6 +650,11 @@ export class Game {
   /** Moves a player (their browser moves them, so tell it). `note` tells them who did it. */
   _teleport(e, pos, note = null) {
     const p = e.p;
+    if (outsideWorld(Math.floor(pos.x), Math.floor(pos.z))) { // no further than the edge of the world
+      const at = insideWorld(pos.x, pos.z);
+      pos = { ...at, y: this.world.surfaceAt(Math.floor(at.x), Math.floor(at.z)) };
+      note = `${note ? `${note} ` : ''}(as far as the edge of the world)`;
+    }
     p.pos = { ...pos };
     p.vel = { x: 0, y: 0, z: 0 };
     e.grapple = null;
@@ -748,6 +776,7 @@ export class Game {
       case 'allergy': return `🤧 ${name} sneezed themselves to death (pet allergies)`;
       case 'void': return `🕳️ ${name} fell out of the world`;
       case 'crushed': return `🧱 ${name} was crushed by falling blocks`;
+      case 'fire': return `🔥 ${name} burned to a crisp`;
       default: return `💀 ${name} died`;
     }
   }
@@ -1216,7 +1245,7 @@ export class Game {
       if (!gun || p.dead) return;
       if ((p.mags[gun] || 0) >= GUNS[gun].mag) return e.send({ type: 'msg', text: `Your ${itemName(gun)} is already full (${GUNS[gun].mag})` });
       const other = hand === 'left' ? 'right' : 'left';
-      p.reloading = { gun, hand, other };
+      p.reloading = { gun, hand, other, loads: 0 }; // (`loads` counts what went in: avatars.js animates each one)
       p.validateHands(); // (a two-handed gun lets go with the other hand)
       e.send({ type: 'msg', kind: 'event', text: `🔄 Reloading: hold ${AMMO[GUNS[gun].ammo].name} in your ${other} hand and click with it, then press R again` });
       this._fx({ type: 'reload', by: e.id, step: 'start', x: r2(p.pos.x), y: r2(p.pos.y + 1), z: r2(p.pos.z) });
@@ -1225,13 +1254,28 @@ export class Game {
       const def = GUNS[r.gun];
       const space = def.mag - (p.mags[r.gun] || 0);
       const have = ammoCount(p, def.ammo);
-      if (!(have > 0)) return e.send({ type: 'msg', kind: 'deny', text: `You're out of ${AMMO[def.ammo].name.toLowerCase()}` });
+      if (!(have > 0) && !def.anyGrenade) return e.send({ type: 'msg', kind: 'deny', text: `You're out of ${AMMO[def.ammo].name.toLowerCase()}` });
+      if (def.anyGrenade) { // the Grenade Launcher: whichever grenade is in your hand goes in next
+        const g = String(p.hands[hand]).slice(5);
+        if (!String(p.hands[hand]).startsWith('ammo:') || !isGrenade(g)) return e.send({ type: 'msg', kind: 'deny', text: `That's not a grenade: hold some grenades (any kind) in your ${hand} hand` });
+        if (space <= 0) return e.send({ type: 'msg', text: `Full (${def.mag}): press R to finish reloading` });
+        if (!(ammoCount(p, g) > 0)) return e.send({ type: 'msg', kind: 'deny', text: `You're out of ${AMMO[g].name.toLowerCase()}` });
+        spend(p, 'ammo', g, 1);
+        p.launcherLoad = [...(p.launcherLoad || []), g];
+        p.mags[r.gun] = p.launcherLoad.length;
+        r.loads = (r.loads || 0) + 1;
+        p.validateHands(hand);
+        this._fx({ type: 'reload', by: e.id, step: 'load', x: r2(p.pos.x), y: r2(p.pos.y + 1), z: r2(p.pos.z) });
+        if (p.mags[r.gun] >= def.mag) e.send({ type: 'msg', text: `Full (${def.mag}): press R to finish reloading` });
+        return this._sendYou(e);
+      }
       if (p.hands[hand] !== `ammo:${def.ammo}`) return e.send({ type: 'msg', kind: 'deny', text: `That's not ${AMMO[def.ammo].name.toLowerCase()}: hold ${AMMO[def.ammo].name} in your ${hand} hand` });
       if (space <= 0) return e.send({ type: 'msg', text: `Full (${def.mag}): press R to finish reloading` });
       if (!(have > 0)) return e.send({ type: 'msg', kind: 'deny', text: `You're out of ${AMMO[def.ammo].name.toLowerCase()}` });
       const n = Math.min(space, have, def.loadOne ? 1 : space);
       spend(p, 'ammo', def.ammo, n);
       p.mags[r.gun] = (p.mags[r.gun] || 0) + n;
+      r.loads = (r.loads || 0) + 1;
       p.validateHands(hand); // (that might have been the last of it)
       this._fx({ type: 'reload', by: e.id, step: 'load', x: r2(p.pos.x), y: r2(p.pos.y + 1), z: r2(p.pos.z) });
       if (p.mags[r.gun] >= def.mag) e.send({ type: 'msg', text: `Full (${def.mag}): press R to finish reloading` });
@@ -1613,7 +1657,7 @@ export class Game {
     if (e.shrug[kind] > this.clock) return true;
     if (!(this.rand() < statEffects(e.p.stats).resist)) return false;
     e.shrug[kind] = this.clock + 3;
-    const what = { chill: 'the cold', blind: 'the blindness', shrink: 'the shrinking', enlarge: 'the growth spurt', polymorph: 'the baby curse', hallucinate: 'the visions', headache: 'the headache', upset: 'the stomach ache' }[kind] || 'it';
+    const what = { chill: 'the cold', blind: 'the blindness', dizzy: 'the dizziness', shrink: 'the shrinking', enlarge: 'the growth spurt', polymorph: 'the baby curse', hallucinate: 'the visions', headache: 'the headache', upset: 'the stomach ache' }[kind] || 'it';
     e.send({ type: 'msg', kind: 'event', text: `💪 Built Different: you shrugged off ${what}` });
     return true;
   }
@@ -1653,13 +1697,16 @@ export class Game {
   /** Magic missiles turn towards the nearest target in front of them. */
   _steerMissiles(dt) {
     for (const fb of this.fireballs.list) {
-      if (fb.kind !== 'missile') continue;
+      if (fb.kind === 'drunk') { this._drunk(fb, dt); continue; }
+      if (fb.kind === 'nuke') { this._guideNuke(fb, dt); continue; }
+      if (fb.kind !== 'missile' && fb.kind !== 'homing') continue;
+      const homing = fb.kind === 'homing'; // (the Homing Launcher's: its own seek range and turn rate)
       const speed = Math.hypot(fb.vel.x, fb.vel.y, fb.vel.z) || magic(this.settings, 'missileSpeed');
       const fwd = { x: fb.vel.x / speed, y: fb.vel.y / speed, z: fb.vel.z / speed };
       const targets = [...this.mobs.list.filter((m) => !m.dead && !MOB_TYPES[m.type].passive),
         ...(this.settings.pvp ? [...this.players.values()].filter((o) => o.id !== fb.owner && !o.p.dead && !(o.p.effects.invisible > 0)).map((o) => o.p) : [])];
       let best = null;
-      let bestD = magic(this.settings, 'missileSeek');
+      let bestD = homing ? T.homingSeek : magic(this.settings, 'missileSeek');
       for (const t of targets) {
         const c = t.center;
         const dx = c.x - fb.pos.x;
@@ -1669,13 +1716,67 @@ export class Game {
         if (dd < bestD && (dx * fwd.x + dy * fwd.y + dz * fwd.z) / dd > 0) { bestD = dd; best = { x: dx / dd, y: dy / dd, z: dz / dd }; }
       }
       if (!best) continue;
-      const k = Math.min(1, magic(this.settings, 'missileTurn') * dt);
+      const k = Math.min(1, (homing ? T.homingTurn : magic(this.settings, 'missileTurn')) * dt);
       const nx = fwd.x + (best.x - fwd.x) * k;
       const ny = fwd.y + (best.y - fwd.y) * k;
       const nz = fwd.z + (best.z - fwd.z) * k;
       const len = Math.hypot(nx, ny, nz) || 1;
       fb.vel = { x: (nx / len) * speed, y: (ny / len) * speed, z: (nz / len) * speed };
     }
+  }
+
+  /**
+   * A drunken rocket: a corkscrew round its own line, but a sloppy one (`fb.drunk`: base direction, the two
+   * sideways axes, phase and spin). The spin speeds up, slows and now and then flips; the corkscrew swells and
+   * shrinks; the line drifts (with some momentum) and sometimes lurches; the rocket surges and sags. All scaled
+   * by the Drunken rocket wander setting.
+   */
+  _drunk(fb, dt) {
+    const d = fb.drunk;
+    const w = T.drunkWander;
+    const r = () => this.rand() - 0.5;
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    d.rate = Math.sign(d.rate || 1) * clamp(Math.abs(d.rate) + r() * 40 * w * dt, 3, 20); // the spin wanders...
+    if (this.rand() < 0.5 * w * dt) d.rate = -d.rate; // ...and sometimes reverses
+    d.phase += d.rate * dt;
+    d.ampK = clamp((d.ampK ?? 1) + r() * 5 * w * dt, 0.25, 1.7); // the corkscrew swells and shrinks
+    d.drift = d.drift || { x: 0, y: 0, z: 0 }; // the line drifts, with momentum
+    const k = Math.max(0, 1 - 1.5 * dt);
+    d.drift = { x: d.drift.x * k + r() * 3 * w * dt, y: d.drift.y * k + r() * 3 * w * dt, z: d.drift.z * k + r() * 3 * w * dt };
+    d.base = { x: d.base.x + d.drift.x * dt * 4, y: d.base.y + d.drift.y * dt * 4, z: d.base.z + d.drift.z * dt * 4 };
+    if (this.rand() < 1.2 * w * dt) { // a lurch
+      const j = 0.35 * w;
+      d.base = { x: d.base.x + r() * j, y: d.base.y + r() * j * 0.6, z: d.base.z + r() * j };
+    }
+    const bl = Math.hypot(d.base.x, d.base.y, d.base.z) || 1;
+    d.base = { x: d.base.x / bl, y: d.base.y / bl, z: d.base.z / bl };
+    d.speedK = clamp((d.speedK ?? 1) + r() * 2.5 * w * dt, 0.65, 1.35); // surges and sags
+    const amp = T.drunkWobble * Math.min(1, fb.age * 1.5) * d.ampK; // (the corkscrew opens up as it goes)
+    const c = Math.cos(d.phase) * amp;
+    const sn = Math.sin(d.phase) * amp;
+    const x = d.base.x + d.u.x * c + d.v.x * sn;
+    const y = d.base.y + d.u.y * c + d.v.y * sn;
+    const z = d.base.z + d.u.z * c + d.v.z * sn;
+    const len = Math.hypot(x, y, z) || 1;
+    const sp = d.speed * d.speedK;
+    fb.vel = { x: (x / len) * sp, y: (y / len) * sp, z: (z / len) * sp };
+  }
+
+  /** A guided nuke turns (at the Nuke turn rate) towards where its rider is looking. */
+  _guideNuke(fb, dt) {
+    const e = fb.guided ? this.players.get(fb.guided) : null;
+    if (!e || e.p.dead) { if (e) this._endGuide(e); return; }
+    const speed = Math.hypot(fb.vel.x, fb.vel.y, fb.vel.z) || 1;
+    const f = { x: fb.vel.x / speed, y: fb.vel.y / speed, z: fb.vel.z / speed };
+    const cp = Math.cos(e.pitch || 0);
+    const want = { x: -Math.sin(e.yaw || 0) * cp, y: Math.sin(e.pitch || 0), z: -Math.cos(e.yaw || 0) * cp };
+    const angle = Math.acos(Math.max(-1, Math.min(1, f.x * want.x + f.y * want.y + f.z * want.z)));
+    const k = angle > 1e-4 ? Math.min(1, (T.nukeTurn * dt) / angle) : 1;
+    const nx = f.x + (want.x - f.x) * k;
+    const ny = f.y + (want.y - f.y) * k;
+    const nz = f.z + (want.z - f.z) * k;
+    const len = Math.hypot(nx, ny, nz) || 1;
+    fb.vel = { x: (nx / len) * speed, y: (ny / len) * speed, z: (nz / len) * speed };
   }
 
   /** Damage multiplier from Power Surge. */
@@ -1703,13 +1804,13 @@ export class Game {
   _fire(e, { hand, o, d, aim: ads, draw }) {
     const kind = this._holding(e, hand, (k) => k in GUNS);
     const aim = this._aim(e, o, d);
-    if (!kind || !aim) return;
+    if (!kind || !aim || e.guiding) return; // (riding a nuke: a click is `detonate`)
     this._reveal(e);
     const gun = gunStats(kind, this.settings); // damage, rate, pellets and spread are server settings
     const p = e.p;
     const cd = `${hand}:${kind}`; // per hand, so two pistols can both fire
     const ult = e.ultOn?.key; // (Fan the Hammer, Boomstick, Bullet Hose, Deadeye, Overload, Rally: ultimates.js)
-    const freeAmmo = ultBuff(ult, 'ammo', false) || p.buildy; // (Buildy Bois never reload)
+    const freeAmmo = ultBuff(ult, 'ammo', false); // (Buildy Bois reload like anyone, from an endless supply)
     const mag = usesMag(kind); // from the magazine (R reloads it); bows straight from your arrows
     if (p.reloading || (e.gunCd[cd] || 0) > 0) return;
     if (!freeAmmo && (mag ? (p.mags[kind] || 0) < gun.per : ammoCount(p, gun.ammo) < gun.per)) return;
@@ -1726,6 +1827,41 @@ export class Game {
       // A bow you draw (hold, then let go): a part-drawn arrow is slower and weaker. The client says how far.
       const pull = GUNS[kind].draw ? Math.max(T.bowMinDraw / 100, Math.min(1, num(draw) ? draw : 1)) : 1;
       Object.assign(this.fireballs.shoot(origin, dir, e.id, { kind: 'arrow', speed: gun.speed * (0.35 + 0.65 * pull), gravity: gun.gravity, radius: 0, mult: gun.damage * mult * pull * statEffects(e.p.stats).damage, lifetime: 6, skill: kind }), { knock: gun.knock * pull, weapon: gun.name });
+      this._fx({ type: 'shot', gun: kind, by: e.id, o: at(0, dir), ends: [] });
+      return;
+    }
+    if (gun.type === 'grenade' || gun.type === 'flare') { // the Grenade Launcher (whatever's next in it) and the Flare Gun: grenades.js
+      let g = 'flare';
+      if (gun.type === 'grenade') {
+        const held = String(p.hands[hand === 'left' ? 'right' : 'left'] || '').slice(5);
+        g = freeAmmo ? (isGrenade(held) ? held : 'frag') : (p.launcherLoad.shift() || 'frag'); // (free ammo: the grenade in your other hand, else frag)
+        if (p.launcherLoad.length) p.mags.launcher = p.launcherLoad.length; else delete p.mags.launcher;
+      }
+      this.grenades.throw(origin, dir, e.id, g, { speed: gun.speed, launched: true, mult: gun.damage * mult, skill: kind, weapon: gun.name });
+      this._fx({ type: 'shot', gun: kind, by: e.id, o: at(0, dir), ends: [] });
+      return;
+    }
+    if (gun.type === 'homing' || gun.type === 'drunken' || gun.type === 'nuke') { // missiles (`_steerMissiles` flies them)
+      const base = { speed: gun.speed, gravity: 0, radius: gun.radius, mult: gun.damage * mult, skill: kind };
+      if (gun.type === 'homing') Object.assign(this.fireballs.shoot(origin, dir, e.id, { ...base, kind: 'homing', lifetime: T.homingLife }), { weapon: gun.name });
+      else if (gun.type === 'drunken') {
+        for (let i = 0; i < 8; i++) { // eight, each off on its own corkscrew
+          const b = spreadDir(dir, T.drunkSpread, this.rand);
+          const side = Math.abs(b.y) < 0.9 ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 };
+          const cross = (a, c) => ({ x: a.y * c.z - a.z * c.y, y: a.z * c.x - a.x * c.z, z: a.x * c.y - a.y * c.x });
+          const norm = (v) => { const l = Math.hypot(v.x, v.y, v.z) || 1; return { x: v.x / l, y: v.y / l, z: v.z / l }; };
+          const u = norm(cross(b, side));
+          const fb = this.fireballs.shoot(origin, b, e.id, { ...base, kind: 'drunk', lifetime: T.drunkLife * (0.7 + this.rand() * 0.6) });
+          fb.weapon = gun.name;
+          fb.drunk = { base: b, u, v: norm(cross(b, u)), phase: this.rand() * Math.PI * 2, rate: (7 + this.rand() * 7) * (this.rand() < 0.5 ? -1 : 1), speed: gun.speed * (0.8 + this.rand() * 0.4) };
+        }
+      } else { // the guided nuke: you ride it (the client's view goes to its nose; your yaw and pitch in `state` steer it)
+        const fb = this.fireballs.shoot(origin, dir, e.id, { ...base, kind: 'nuke', lifetime: T.nukeLife });
+        fb.weapon = gun.name;
+        fb.guided = e.id;
+        e.guiding = fb.id;
+        e.send({ type: 'guide', id: fb.id });
+      }
       this._fx({ type: 'shot', gun: kind, by: e.id, o: at(0, dir), ends: [] });
       return;
     }
@@ -1807,11 +1943,45 @@ export class Game {
 
   _throw(e, { hand, o, d }) {
     const aim = this._aim(e, o, d);
-    if (!aim || !this._holding(e, hand, (k) => k === 'hackysack') || !(itemCount(e.p, 'hackysack') > 0)) return;
+    if (!aim) return;
+    const nade = this._holding(e, hand, (k) => typeof k === 'string' && isGrenade(k.slice(5)) && k.startsWith('ammo:'));
+    if (nade) { // a grenade, mine or charge, by hand (grenades.js)
+      const kind = nade.slice(5);
+      if (e.p.reloading?.other === hand || e.guiding || !(ammoCount(e.p, kind) > 0)) return;
+      this._reveal(e);
+      spend(e.p, 'ammo', kind, 1);
+      this.grenades.throw(aim[0], aim[1], e.id, kind, { mult: this._mult(e), skill: 'grenade' });
+      e.p.validateHands(hand);
+      this._fx({ type: 'toss', by: e.id, x: r2(aim[0].x), y: r2(aim[0].y), z: r2(aim[0].z) });
+      return;
+    }
+    if (!this._holding(e, hand, (k) => k === 'hackysack') || !(itemCount(e.p, 'hackysack') > 0)) return;
     this._reveal(e);
     spend(e.p, 'tools', 'hackysack');
     this.throwables.throw(aim[0], aim[1], e.id);
     e.p.validateHands(hand);
+  }
+
+  /** The `detonate` message: the nuke you're riding goes off now; otherwise, with the Detonator, every radio charge you have out. */
+  _detonateMine(e) {
+    if (e.guiding) {
+      const fb = this.fireballs.list.find((f) => f.id === e.guiding);
+      if (fb) fb.detonateNow = true;
+      return;
+    }
+    if (!this._holding(e, 'left', (k) => k === 'detonator') && !this._holding(e, 'right', (k) => k === 'detonator')) return;
+    const n = this.grenades.detonate(e.id);
+    this._fx({ type: 'detonator', by: e.id, n, x: r2(e.p.pos.x), y: r2(e.p.pos.y + 1), z: r2(e.p.pos.z) });
+    if (!n) e.send({ type: 'msg', kind: 'deny', text: 'Click… nothing. You have no Radio Charges out.' });
+  }
+
+  /** Stop riding a guided nuke (it went off, or you left): your view comes home. */
+  _endGuide(e) {
+    if (!e.guiding) return;
+    const fb = this.fireballs.list.find((f) => f.id === e.guiding);
+    if (fb) fb.guided = null;
+    e.guiding = null;
+    e.send({ type: 'guide', id: null });
   }
 
   _eat(e, { hand }) {
@@ -1994,8 +2164,10 @@ export class Game {
     e.packed = true;
     const items = {};
     let any = false;
-    for (const [gun, n] of Object.entries(p.mags)) if (n > 0 && GUNS[gun]) p.ammo[GUNS[gun].ammo] = (p.ammo[GUNS[gun].ammo] || 0) + n; // (loaded rounds go in the bag too)
+    for (const [gun, n] of Object.entries(p.mags)) if (n > 0 && GUNS[gun] && !GUNS[gun].anyGrenade) p.ammo[GUNS[gun].ammo] = (p.ammo[GUNS[gun].ammo] || 0) + n; // (loaded rounds go in the bag too)
+    for (const g of p.launcherLoad || []) p.ammo[g] = (p.ammo[g] || 0) + 1; // (and the launcher's grenades)
     p.mags = {};
+    p.launcherLoad = [];
     p.reloading = null;
     for (const inv of ['tools', 'food', 'dishes', 'blocks', 'scrolls', 'ammo', 'unfired', 'materials']) {
       const held = Object.fromEntries(Object.entries(p[inv] || {}).filter(([, n]) => n > 0));
@@ -2276,6 +2448,7 @@ export class Game {
     }
 
     if (entries.length) {
+      for (const e of entries) if (e.guiding && !this.fireballs.list.some((f) => f.id === e.guiding)) this._endGuide(e); // (its nuke's gone, however that happened: let its rider go)
       this._steerMissiles(dt);
       this._updateStorms(dt);
       for (const ev of this.fireballs.update(dt, (pos, fb) => this._targetAt(pos, fb.owner))) {
@@ -2301,6 +2474,12 @@ export class Game {
           const t = this._targetAt(ev, fb.owner);
           if (t) t.damage(Math.max(1, Math.round(fb.mult)), ev.x - fb.vel.x, ev.z - fb.vel.z, 3, this._shotBy(fb));
           this._fx({ type: t ? 'missileHit' : 'fizzle', x: r2(ev.x), y: r2(ev.y), z: r2(ev.z) });
+        } else if (fb.kind === 'nuke') { // the big one: its rider comes home (first, whatever happens next), then a huge blast and a flash everyone nearby sees
+          const rider = fb.guided ? this.players.get(fb.guided) : null;
+          if (rider) this._endGuide(rider);
+          this._detonate(ev.x, ev.y, ev.z, fb.radius, fb.mult, this._shotBy(fb));
+          this._fx({ type: 'nuke', x: r2(ev.x), y: r2(ev.y), z: r2(ev.z), radius: fb.radius });
+          this._nukeFires(ev, fb);
         } else if (fb.gentle && (ev.type === 'explode' || fb.kind !== 'fireball')) this._gentleBlast(ev.x, ev.y, ev.z, fb.radius, fb.mult, this._shotBy(fb)); // (an ultimate's: the ground's left alone)
         else if (ev.type === 'explode' || fb.kind !== 'fireball') this._detonate(ev.x, ev.y, ev.z, fb.radius, fb.mult, this._shotBy(fb));
         else this._fx({ type: 'fizzle', x: ev.x, y: ev.y, z: ev.z });
@@ -2317,6 +2496,7 @@ export class Game {
           this.drops.spawn('hackysack', ev.x, ev.y, ev.z, false);
         }
       }
+      this._updateGrenades(dt);
       for (const d of this.drops.update(dt, bodies)) this._pickedUp(d, entries);
       for (const ev of this.drones.update(dt, (dr) => {
         const owner = this.players.get(dr.owner);
@@ -2373,7 +2553,7 @@ export class Game {
     p.effects.surge = Math.max(0, p.effects.surge - dt);
     p.effects.flap = Math.max(0, p.effects.flap - dt);
     const flew = p.effects.flight;
-    for (const k of ['stoneskin', 'invisible', 'polymorph', 'shrink', 'enlarge', 'hallucinate', 'chill', 'flight', 'blind']) p.effects[k] = Math.max(0, p.effects[k] - dt); // spells
+    for (const k of ['stoneskin', 'invisible', 'polymorph', 'shrink', 'enlarge', 'hallucinate', 'chill', 'flight', 'blind', 'dizzy']) p.effects[k] = Math.max(0, (p.effects[k] || 0) - dt); // spells (and a flashbang's dizziness)
     if (flew > 3 && p.effects.flight <= 3 && !p.buildy) e.send({ type: 'msg', kind: 'deny', text: '🕊️ Your flight is wearing off: find somewhere to land!' });
     if (flew > 0 && p.effects.flight <= 0 && !p.buildy) e.flying = false;
     for (const k in e.gunCd) e.gunCd[k] -= dt;
@@ -2439,6 +2619,126 @@ export class Game {
     return null;
   }
 
+  // ---------- grenades, fires and flashbangs (grenades.js) ----------
+
+  _updateGrenades(dt) {
+    // (a live mine goes off for anything that comes close: creatures, players, and whoever threw it)
+    const near = (pos, r) => this.mobs.list.some((m) => !m.dead && this._dist(m.center, pos) < r + (m.halfW || 0.3))
+      || [...this.players.values()].some((o) => !o.p.dead && this._dist(o.p.center, pos) < r + 0.3);
+    for (const ev of this.grenades.update(dt, (pos, g) => this._targetAt(pos, g.owner), near)) {
+      const g = ev.g;
+      const at = { x: r2(ev.x), y: r2(ev.y), z: r2(ev.z) };
+      if (ev.type === 'boom') this._grenadeBoom(g, ev);
+      else if (ev.type === 'bounce') this._fx({ type: 'clink', ...at });
+      else if (ev.type === 'stick') this._fx({ type: 'stick', kind: g.kind, ...at });
+      else if (ev.type === 'armed') this._fx({ type: 'armed', ...at });
+      else if (ev.type === 'flareHit') { // a flare hits something: it hurts, and creatures catch fire for a bit
+        ev.target.damage(Math.max(1, Math.round(g.mult)), ev.x, ev.z, 1, this._src(g.owner, g.weapon, g.skill));
+        this._ignite(ev.target, 3, this._src(g.owner, g.weapon, g.skill));
+        this._fx({ type: 'flareHit', ...at });
+      }
+    }
+    // Fires on the ground: anything standing in one catches fire (and keeps burning a moment after it steps out).
+    this.fires = this.fires.filter((f) => {
+      f.t -= dt;
+      const src = this._src(f.owner, f.weapon, f.skill);
+      const inFire = (b) => Math.hypot(b.pos.x - f.x, b.pos.z - f.z) < f.r + (b.halfW || 0.3) && b.pos.y > f.y - 2 && b.pos.y < f.y + 2.5;
+      for (const m of this.mobs.list) if (!m.dead && inFire(m)) this._ignite(m, 1.2, src);
+      for (const o of this.players.values()) if (!o.p.dead && inFire(o.p)) this._ignite(o.p, 1.2, src);
+      return f.t > 0;
+    });
+    // Burning: creatures and players on fire take Fire damage every half second until it runs out (or they get wet).
+    if ((this.burnTickT = (this.burnTickT ?? 0) - dt) <= 0) {
+      this.burnTickT = 0.5;
+      const dmg = Math.max(1, Math.round(T.fireDamage * 0.5));
+      const burn = (b) => {
+        if (!(b.burnUntil > this.clock) || b.dead) return;
+        if (this._wet(b)) { b.burnUntil = 0; return; } // (put out)
+        b.damage(dmg, b.pos.x, b.pos.z, 0, b.burnSrc || { cause: 'fire' });
+      };
+      for (const m of this.mobs.list) burn(m);
+      for (const o of this.players.values()) burn(o.p);
+    }
+  }
+
+  /** In water? (Players' own physics runs in their browser, so look at the block at their feet.) */
+  _wet(b) {
+    return b.inWater || this.world.getBlock(Math.floor(b.pos.x), Math.floor(b.pos.y + 0.4), Math.floor(b.pos.z)) === WATER;
+  }
+
+  /** Sets a creature or player on fire for (at least) `seconds` (`burnUntil`, game clock); `src` gets the kill. */
+  _ignite(b, seconds, src) {
+    if (this._wet(b)) return;
+    b.burnUntil = Math.max(b.burnUntil || 0, this.clock + seconds);
+    b.burnSrc = src;
+  }
+
+  /** A nuke's aftermath: fires all over the crater, and everything near enough set alight. */
+  _nukeFires(at, fb) {
+    const r = fb.radius;
+    const src = this._shotBy(fb);
+    for (let i = 0; i < T.nukeFires; i++) {
+      const a = this.rand() * Math.PI * 2;
+      const d = Math.sqrt(this.rand()) * r * 1.1;
+      const x = at.x + Math.cos(a) * d;
+      const z = at.z + Math.sin(a) * d;
+      const y = this.world.surfaceAt(Math.floor(x), Math.floor(z));
+      if (FLUID[this.world.getBlock(Math.floor(x), y - 1, Math.floor(z))]) continue; // (not on water)
+      this.fires.push({ id: this.nextFireId++, x, y, z, r: 3 + this.rand() * 2.5, t: T.nukeFireSeconds * (0.6 + this.rand() * 0.6), owner: fb.owner, skill: fb.skill, weapon: fb.weapon });
+    }
+    const reach = r * 1.3;
+    for (const m of this.mobs.list) if (!m.dead && this._dist(m.center, at) < reach) this._ignite(m, T.nukeBurn, src);
+    for (const o of this.players.values()) if (!o.p.dead && this._dist(o.p.center, at) < reach) this._ignite(o.p, T.nukeBurn, src);
+  }
+
+  /** A grenade goes off: a blast (frag, sticky, mine, charge), a fire (incendiary) or a blinding flash. */
+  _grenadeBoom(g, at) {
+    const src = this._src(g.owner, g.weapon, g.skill);
+    const b = blastOf(g.kind);
+    if (b) return this._detonate(at.x, at.y, at.z, b.radius, b.mult * g.mult, src);
+    if (g.kind === 'incendiary') {
+      const y = this.world.surfaceAt(Math.floor(at.x), Math.floor(at.z)); // (the fire spreads over the ground below)
+      const f = { id: this.nextFireId++, x: at.x, y: Math.abs(y - at.y) < 4 ? y : at.y, z: at.z, r: T.fireRadius, t: T.fireSeconds, owner: g.owner, skill: g.skill, weapon: g.weapon };
+      this.fires.push(f);
+      this._fx({ type: 'fireBurst', x: r2(f.x), y: r2(f.y), z: r2(f.z), r: f.r });
+    } else if (g.kind === 'flashbang') this._flashbang(at);
+  }
+
+  /** How hard a flash at `c` hits eyes at `eye` (0: not at all): closer, and looking at it, is worse. Walls block it. */
+  _flashSeen(c, eye, yaw = null, pitch = 0) {
+    const dx = c.x - eye.x;
+    const dy = c.y - eye.y;
+    const dz = c.z - eye.z;
+    const d = Math.hypot(dx, dy, dz);
+    if (d > T.flashRadius) return 0;
+    if (d > 0.6 && this.world.raycast(eye, { x: dx / d, y: dy / d, z: dz / d }, d - 0.4)) return 0; // (round a corner: safe)
+    let face = 1;
+    if (yaw !== null && d > 0.6) {
+      const cp = Math.cos(pitch);
+      const dot = (-Math.sin(yaw) * cp * dx + Math.sin(pitch) * dy - Math.cos(yaw) * cp * dz) / d;
+      face = dot > 0 ? 0.5 + 0.5 * dot : 0.3;
+    }
+    return Math.min(1, (1 - d / T.flashRadius) * 1.4) * face;
+  }
+
+  _flashbang(c) {
+    this._fx({ type: 'flashbang', x: r2(c.x), y: r2(c.y), z: r2(c.z) });
+    for (const o of this.players.values()) {
+      const p = o.p;
+      if (p.dead || p.buildy) continue;
+      const k = this._flashSeen(c, { x: p.pos.x, y: p.pos.y + EYE_HEIGHT * (p.sizeScale || 1), z: p.pos.z }, o.yaw || 0, o.pitch || 0);
+      if (!(k > 0)) continue;
+      const secs = this._debuffTime(p, T.flashSeconds * Math.max(0.25, k));
+      p.effects.blind = Math.max(p.effects.blind || 0, secs);
+      p.effects.dizzy = Math.max(p.effects.dizzy || 0, secs * T.flashDizzy / 100); // (the room spins: main.js sways your view and staggers you)
+    }
+    for (const m of this.mobs.list) {
+      if (m.dead) continue;
+      const k = this._flashSeen(c, m.center);
+      if (k > 0) m.blindT = Math.max(m.blindT || 0, T.flashSeconds * Math.max(0.3, k)); // (it can't see anyone)
+    }
+  }
+
   /** Falling blocks (gravity.js): move them, and crush whoever holds them up. */
   _blockGravity(dt, entries) {
     const bodies = [...entries.map((e) => e.p), ...this.mobs.list];
@@ -2455,7 +2755,8 @@ export class Game {
   _detonate(x, y, z, radius, mult = 1, source = null) {
     const removed = explode(this.world, x, y, z, radius, this.rand, (bx, by, bz) => this._landBreakable(source, bx, bz)); // (not on someone else's land)
     this.mobs.blast(x, y, z, radius, [...this.players.values()].map((e) => e.p), mult, source);
-    this._fx({ type: 'explode', x, y, z, radius, removed: removed.map((b) => [b.x, b.y, b.z, b.id]) });
+    const debris = removed.length > 2500 ? removed.filter((_, i) => i % Math.ceil(removed.length / 2500) === 0) : removed; // (the blocks themselves all go out in `blocks`; this is just for flying debris)
+    this._fx({ type: 'explode', x, y, z, radius, removed: debris.map((b) => [b.x, b.y, b.z, b.id]) });
   }
 
   _mobEvent(ev, entries) {
@@ -2762,7 +3063,7 @@ export class Game {
       orders: p.orders.map((o) => ({ kind: o.kind, t: Math.max(0, Math.ceil(o.t)), drone: !!o.drone })),
       food: { ...p.food }, dishes: { ...p.dishes }, wallet: { ...p.wallet }, tools: { ...p.tools }, materials: { ...p.materials }, spells: [...p.spells], hotbars: { left: [...p.hotbars.left], right: [...p.hotbars.right] },
       scrolls: { ...p.scrolls }, worn: p.worn,
-      mags: { ...p.mags }, reloading: p.reloading ? { gun: p.reloading.gun, hand: p.reloading.hand } : null,
+      burning: p.burnUntil > this.clock, mags: { ...p.mags }, launcherLoad: [...(p.launcherLoad || [])], guiding: e.guiding || null, reloading: p.reloading ? { gun: p.reloading.gun, hand: p.reloading.hand, loads: p.reloading.loads || 0 } : null,
       ult: Math.floor(p.ult), ultKey: ultFor(p.skills), ultOn: e.ultOn ? { key: e.ultOn.key, t: Math.max(0, Math.ceil(e.ultOn.t)) } : null,
       quests: this._questsYou(p),
       jobs: p.jobs.map((j) => ({ id: j.id, name: j.name, kind: j.kind, item: j.item, n: j.n, left: Math.max(0, Math.ceil((j.due - Date.now()) / 1000)) })), lastTill: !!p.lastTill,
@@ -2776,38 +3077,63 @@ export class Game {
 
   /** A visual effect for everyone: { type: 'fx', fx: 'explode' | 'puff' | ..., ...details }. */
   _fx({ type, ...details }) {
-    this._broadcast({ ...details, type: 'fx', fx: type });
+    const msg = { ...details, type: 'fx', fx: type };
+    if (!num(details.x) || !num(details.z)) return this._broadcast(msg);
+    for (const e of this.players.values()) { // only to those who could see it (and whoever it's about)
+      const v = e.p.view + VIEW_MARGIN + 16;
+      if (details.by === e.id || (Math.abs(e.p.pos.x - details.x) < v && Math.abs(e.p.pos.z - details.z) < v)) e.send(msg);
+    }
   }
 
   _sendSnapshot() {
     if (!this.players.size) return;
     const pos = (o) => ({ x: r2(o.x), y: r2(o.y), z: r2(o.z) });
-    this._broadcast({
-      type: 'snap',
-      time: this.time,
-      rate: round2(this.rate),
-      players: [...this.players.values()].map((e) => ({
+    // Everything once, each with where it is ([entry, x, z]); then each player gets what's within their view.
+    const tag = (list, make, at = (o) => o) => list.map((o) => { const d = make(o); const w = at(o); return [d, w.x, w.z]; });
+    const players = tag([...this.players.values()], (e) => ({
         id: e.id, name: e.name, ...pos(e.p.pos), yaw: r2(e.yaw), pitch: r2(e.pitch),
         crouch: e.crouch, flying: e.flying, phone: e.phoneOut, hands: { ...e.p.hands }, dead: e.p.dead,
         surge: e.p.effects.surge > 0, grapple: e.grapple, buildy: e.p.buildy,
         invisible: e.p.effects.invisible > 0, poly: e.p.effects.polymorph > 0, scale: e.p.sizeScale, stone: e.p.effects.stoneskin > 0,
-        chill: e.p.effects.chill > 0, ult: e.ultOn?.key || null, worn: e.p.worn || null, look: e.look, tall: e.p.stats.tallness ?? 10, bobber: e.fishing ? { ...pos(e.fishing), bite: e.fishing.bite > 0, hand: e.fishing.hand } : null, voice: e.voiceMode || null, sw: e.sw || { left: 0, right: 0 }, mine: e.mine || null, draw: e.draw || 0,
-      })),
-      mobs: this.mobs.list.map((m) => ({
+        chill: e.p.effects.chill > 0, burning: e.p.burnUntil > this.clock, ult: e.ultOn?.key || null, worn: e.p.worn || null, look: e.look, tall: e.p.stats.tallness ?? 10, bobber: e.fishing ? { ...pos(e.fishing), bite: e.fishing.bite > 0, hand: e.fishing.hand } : null, voice: e.voiceMode || null, sw: e.sw || { left: 0, right: 0 }, mine: e.mine || null, draw: e.draw || 0, reload: e.p.reloading ? { gun: e.p.reloading.gun, hand: e.p.reloading.hand, loads: e.p.reloading.loads || 0 } : null,
+      }), (e) => e.p.pos);
+    const lists = {
+      mobs: tag(this.mobs.list, (m) => ({
         id: m.id, type: m.type, ...pos(m.pos), yaw: r2(m.yaw), size: m.size, hurt: m.hurtT > 0,
-        burning: m.burning, aiming: m.aiming, walk: r2(m.walkAmount), vy: r2(m.vel.y),
+        burning: m.burning || m.burnUntil > this.clock, aiming: m.aiming, walk: r2(m.walkAmount), vy: r2(m.vel.y),
         poly: m.polyT > 0, scale: m.scale, chill: m.chillT > 0, arrows: m.arrows || 0,
-      })),
-      arrows: this.mobs.arrows.map((a) => ({ id: a.id, ...pos(a.pos), vx: r2(a.vel.x), vy: r2(a.vel.y), vz: r2(a.vel.z), stuck: a.stuck })),
-      drops: this.drops.list.map((d) => ({ id: d.id, kind: d.kind, ...pos(d.body.pos), ...(d.dir ? { dir: d.dir } : {}) })),
-      fireballs: this.fireballs.list.map((f) => ({ id: f.id, kind: f.kind, ...pos(f.pos) })),
-      sacks: this.throwables.list.map((s) => ({ id: s.id, ...pos(s.pos) })),
-      messes: this.messes.map((m) => ({ id: m.id, ...pos(m) })),
-      backpacks: this.backpacks.map((b) => ({ id: b.id, ...pos(b), name: b.name, owner: [...this.players.values()].find((o) => o.token === b.owner)?.id ?? null })),
-      drones: this.drones.list.map((d) => ({ id: d.id, ...pos(d.pos), yaw: r2(d.yaw), carrying: d.carrying })),
-      storms: this.storms.map((s) => ({ id: s.id, ...pos(s), r: magic(this.settings, 'blizzardRadius') })),
-      npcs: this.npcs.list.map((n) => ({ id: n.id, key: n.key, name: n.name, role: n.role, ...pos(n.pos), yaw: r2(n.yaw), hands: { ...n.hands }, look: { ...n.look }, worn: n.worn })),
-    });
+      }), (m) => m.pos),
+      arrows: tag(this.mobs.arrows, (a) => ({ id: a.id, ...pos(a.pos), vx: r2(a.vel.x), vy: r2(a.vel.y), vz: r2(a.vel.z), stuck: a.stuck }), (a) => a.pos),
+      drops: tag(this.drops.list, (d) => ({ id: d.id, kind: d.kind, ...pos(d.body.pos), ...(d.dir ? { dir: d.dir } : {}) }), (d) => d.body.pos),
+      fireballs: tag(this.fireballs.list, (f) => ({ id: f.id, kind: f.kind, ...pos(f.pos) }), (f) => f.pos),
+      sacks: tag(this.throwables.list, (t) => ({ id: t.id, ...pos(t.pos) }), (t) => t.pos),
+      messes: tag(this.messes, (m) => ({ id: m.id, ...pos(m) })),
+      drones: tag(this.drones.list, (d) => ({ id: d.id, ...pos(d.pos), yaw: r2(d.yaw), carrying: d.carrying }), (d) => d.pos),
+      storms: tag(this.storms, (st) => ({ id: st.id, ...pos(st), r: magic(this.settings, 'blizzardRadius') })),
+      grenades: tag(this.grenades.list, (g) => ({ id: g.id, kind: g.kind, ...pos(g.pos), ...(g.armed ? { armed: true } : {}), ...(g.chute ? { chute: true } : {}), ...(g.stuck ? { stuck: true } : {}) }), (g) => g.pos),
+      fires: tag(this.fires, (f) => ({ id: f.id, ...pos(f), r: f.r })),
+      npcs: tag(this.npcs.list, (n) => ({ id: n.id, key: n.key, name: n.name, role: n.role, ...pos(n.pos), yaw: r2(n.yaw), hands: { ...n.hands }, look: { ...n.look }, worn: n.worn }), (n) => n.pos),
+    };
+    const owners = new Map([...this.players.values()].map((o) => [o.token, o.id]));
+    const packs = tag(this.backpacks, (b) => ({ id: b.id, ...pos(b), name: b.name, owner: owners.get(b.owner) ?? null }));
+    this.rosterT = (this.rosterT ?? 0) - (this.multiplayer ? SNAPSHOT_EVERY : 0);
+    const roster = this.rosterT <= 0 && this.multiplayer;
+    if (roster) this.rosterT = ROSTER_EVERY;
+    for (const e of this.players.values()) {
+      const v = e.p.view + VIEW_MARGIN;
+      const { x, z } = (e.guiding && this.fireballs.list.find((f) => f.id === e.guiding)?.pos) || e.p.pos; // (riding a nuke: what's round the nuke)
+      const near = ([, ox, oz]) => Math.abs(ox - x) < v && Math.abs(oz - z) < v;
+      const snap = { type: 'snap', time: this.time, rate: round2(this.rate) };
+      const seen = players.filter((t) => t[0].id === e.id || near(t));
+      snap.players = seen.map((t) => t[0]);
+      for (const [k, list] of Object.entries(lists)) snap[k] = list.filter(near).map((t) => t[0]);
+      snap.backpacks = packs.filter((t) => t[0].owner === e.id || near(t)).map((t) => t[0]); // (your own's beam shows from anywhere)
+      if (roster) { // everyone else, roughly: for the map, names and the online count
+        const shown = new Set(snap.players.map((d) => d.id));
+        snap.roster = players.filter((t) => !shown.has(t[0].id)).map(([d]) => (d.invisible ? { id: d.id, name: d.name } : { id: d.id, name: d.name, x: Math.round(d.x), z: Math.round(d.z) }));
+      }
+      e.send(snap);
+    }
   }
 
   // ---------- saving ----------
@@ -2817,9 +3143,16 @@ export class Game {
     this.savePlayer(e.token, {
       name: e.name, seed: this.seed, pos: p.dead ? null : { ...p.pos }, traits: p.traits, stats: p.baseStats, statBonus: p.statBonus, statPoints: p.statPoints,
       food: p.food, dishes: p.dishes, wallet: p.wallet, tools: p.tools, materials: p.materials, spells: p.spells, hotbars: p.hotbars, hands: p.hands, ammo: p.ammo, scrolls: p.scrolls, worn: p.worn,
-      skills: p.skills, cleaned: p.cleaned, bed: p.bed, quests: p.quests, mags: p.mags, jobs: p.jobs, lastTill: p.lastTill, blocks: p.blocks, buildy: p.buildy, wornFree: !!p.wornFree, unfired: p.unfired, kiln: p.kiln, cooking: p.cooking,
+      skills: p.skills, cleaned: p.cleaned, bed: p.bed, quests: p.quests, mags: p.mags, launcherLoad: p.launcherLoad || [], jobs: p.jobs, lastTill: p.lastTill, blocks: p.blocks, buildy: p.buildy, wornFree: !!p.wornFree, unfired: p.unfired, kiln: p.kiln, cooking: p.cooking,
       orders: p.orders.map((o) => ({ kind: o.kind, t: Math.max(0, o.t) })), // a drone in flight is sent again next time
     });
+  }
+
+  /** A new sky (celestial.js `cleanSky`'d): saved, and everyone sees it. */
+  _setSky(sky) {
+    this.sky = cleanSky(sky, this.seed);
+    this.store.set('game:sky', JSON.stringify(this.sky));
+    this._broadcast({ type: 'sky', sky: this.sky });
   }
 
   save() {

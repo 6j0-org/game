@@ -37,6 +37,10 @@ const MOVERS = {
   snowball: { noise: { type: 'bandpass', f: 1800, Q: 0.9 }, vol: 0.4, ref: 3 }, // a Blizzard on its way
   orb: { osc: { type: 'square', f: 70, vol: 0.12 }, noise: { type: 'bandpass', f: 400, Q: 2 }, vol: 0.6, ref: 5 },
   arrow: { noise: { type: 'bandpass', f: 2600, Q: 9 }, vol: 0.5, ref: 2 },
+  homing: { osc: { type: 'triangle', f: 340, vol: 0.12 }, noise: { type: 'bandpass', f: 1200, Q: 1 }, vol: 0.5, ref: 4 },
+  drunk: { noise: { type: 'bandpass', f: 1700, Q: 1.4 }, osc: { type: 'sawtooth', f: 140, vol: 0.06 }, vol: 0.3, ref: 3 },
+  nuke: { osc: { type: 'sawtooth', f: 55, vol: 0.18 }, noise: { type: 'lowpass', f: 600, Q: 0.7 }, vol: 0.8, ref: 6 },
+  flare: { noise: { type: 'highpass', f: 2600, Q: 0.6 }, vol: 0.18, ref: 3 }, // a burning flare's hiss
   drone: { osc: { type: 'sawtooth', f: 180, vol: 0.1 }, osc2: { type: 'sawtooth', f: 183.5, vol: 0.08 }, noise: { type: 'bandpass', f: 1400, Q: 1.5 }, vol: 0.35, ref: 4 },
 };
 
@@ -249,6 +253,32 @@ const SOUNDS = {
     k.tone(o, t, { type: 'sawtooth', f0: 70, f1: 120, dur: 0.5, peak: 0.12 });
     return 0.6;
   },
+  launcher: (k, o, t) => { // a hollow thoomp, then the breech clacks
+    k.tone(o, t, { f0: 160, f1: 55, dur: 0.18, peak: 0.45 });
+    k.noise(o, t, { dur: 0.2, peak: 0.25, type: 'lowpass', f0: 900, f1: 200, attack: 0.003 });
+    k.noise(o, t + 0.25, { dur: 0.04, peak: 0.1, type: 'bandpass', f0: 2200, Q: 4 });
+    return 0.3;
+  },
+  flaregun: (k, o, t) => { // a pop and a fizz
+    k.noise(o, t, { dur: 0.1, peak: 0.35, type: 'bandpass', f0: 1500, Q: 1.5, attack: 0.002 });
+    k.noise(o, t + 0.05, { dur: 0.7, peak: 0.12, type: 'highpass', f0: 3500, f1: 2000 });
+    return 0.75;
+  },
+  homing: (k, o, t) => { // a lock-on chirp, then the launch
+    k.tone(o, t, { type: 'square', f0: 1800, dur: 0.05, peak: 0.06 });
+    k.tone(o, t + 0.07, { type: 'square', f0: 2400, dur: 0.05, peak: 0.06 });
+    k.noise(o, t + 0.1, { dur: 0.6, peak: 0.4, type: 'bandpass', f0: 600, f1: 2000, Q: 0.8, attack: 0.02 });
+    return 0.7;
+  },
+  drunken: (k, o, t) => { // eight ragged whooshes
+    for (let i = 0; i < 8; i++) k.noise(o, t + i * 0.035, { dur: 0.35, peak: 0.16, type: 'bandpass', f0: rnd(700, 1500), f1: rnd(1800, 2600), Q: 1, attack: 0.01 });
+    return 0.65;
+  },
+  nuke: (k, o, t) => { // the launch: a heavy roar
+    k.noise(o, t, { dur: 1.2, peak: 0.5, type: 'lowpass', f0: 400, f1: 1500, Q: 0.6, attack: 0.1 });
+    k.tone(o, t, { type: 'sawtooth', f0: 40, f1: 70, dur: 1, peak: 0.15 });
+    return 1.2;
+  },
   railgun: (k, o, t) => {
     k.tone(o, t, { type: 'sawtooth', f0: 1800, f1: 120, dur: 0.5, peak: 0.25 });
     k.noise(o, t, { dur: 0.3, peak: 0.3, type: 'highpass', f0: 3000, f1: 1200 });
@@ -311,6 +341,24 @@ const SOUNDS = {
   ding: (k, o, t) => { k.tone(o, t, { f0: 1568, dur: 0.9, peak: 0.15 }); k.tone(o, t, { f0: 3136, dur: 0.5, peak: 0.04 }); return 0.9; },
 
   // ----- the world -----
+  nukeBoom: (k, o, t) => { // the big one: a crack, then a long, deep rumble that rolls on
+    k.noise(o, t, { dur: 0.3, peak: 0.6, type: 'highpass', f0: 1500, f1: 300, attack: 0.002 });
+    k.noise(o, t, { dur: 6, peak: 0.7, type: 'lowpass', f0: 900, f1: 40, Q: 0.4, attack: 0.02 });
+    k.tone(o, t, { f0: 50, f1: 18, dur: 5, peak: 0.6 });
+    for (let i = 0; i < 10; i++) k.noise(o, t + rnd(0.4, 4), { dur: rnd(0.3, 0.9), peak: 0.15, type: 'lowpass', f0: rnd(150, 400), f1: 60 });
+    return 6;
+  },
+  flashbang: (k, o, t) => { // a sharp, ear-splitting bang
+    k.noise(o, t, { dur: 0.25, peak: 0.7, type: 'highpass', f0: 2000, f1: 600, attack: 0.001 });
+    k.tone(o, t, { f0: 140, f1: 50, dur: 0.3, peak: 0.4 });
+    return 0.4;
+  },
+  tinnitus: (k, o, t, { volume = 1 }) => { k.tone(o, t + 0.2, { f0: 3800, dur: 3.5, peak: 0.05 * volume, attack: 0.2 }); return 3.7; }, // your ears ringing
+  clink: (k, o, t) => { k.tone(o, t, { type: 'triangle', f0: rnd(2200, 2800), dur: 0.08, peak: 0.12 }); k.noise(o, t, { dur: 0.03, peak: 0.08, type: 'bandpass', f0: 3000, Q: 3 }); return 0.1; },
+  stick: (k, o, t) => { k.noise(o, t, { dur: 0.08, peak: 0.2, type: 'lowpass', f0: 700, f1: 200 }); return 0.1; }, // a wet thwap
+  beep: (k, o, t) => { k.tone(o, t, { type: 'square', f0: 1600, dur: 0.07, peak: 0.07 }); k.tone(o, t + 0.12, { type: 'square', f0: 1600, dur: 0.07, peak: 0.07 }); return 0.2; }, // a mine arming
+  detonator: (k, o, t) => { k.noise(o, t, { dur: 0.03, peak: 0.2, type: 'bandpass', f0: 2500, Q: 5 }); k.tone(o, t + 0.04, { type: 'square', f0: 900, dur: 0.12, peak: 0.06 }); return 0.17; },
+  whoosh: (k, o, t) => { k.noise(o, t, { dur: 0.9, peak: 0.4, type: 'bandpass', f0: 300, f1: 900, Q: 0.7, attack: 0.05 }); return 0.9; }, // fire catching
   explode: (k, o, t) => {
     k.noise(o, t, { dur: 1.6, peak: 0.55, type: 'lowpass', f0: 3000, f1: 80, Q: 0.5, attack: 0.005 });
     k.tone(o, t, { f0: 70, f1: 28, dur: 1.0, peak: 0.45 });

@@ -5,14 +5,14 @@
 import * as THREE from 'three';
 import { T } from './tuning.js';
 import { ULTIMATES } from './ultimates.js';
-import { buildHeldModel } from './mobModels.js';
+import { buildHeldModel } from './models.js';
 import { withFlashlight } from './flashlight.js';
 
 /** A colour for each kind of show. */
 const COLORS = { dishes: 0xdfe8f2, axes: 0xc9ced6, sacks: 0xf2c230, water: 0x7fc4ff, fire: 0xff7a2a, feathers: 0xf6f2ea, nova: 0xc77dff,
   rocks: 0x9a9a9a, dirt: 0x8a5a36, vines: 0x4fbf5a, flash: 0xfff6c8, hooks: 0xc9ced6, sparks: 0xffe9a8, rocket: 0xff9a4a, arrow: 0xe8d8b0,
   meteor: 0xff6a1a };
-/** What whirls round a storm (item models: mobModels.js TOOL_SHAPES and DROP_SHAPES). Water and fire are particles. */
+/** What whirls round a storm (item models: models.js TOOL_SHAPES and DROP_SHAPES). Water and fire are particles. */
 const ORBIT = { dishes: ['plate', 'bowl', 'cutlery', 'glass'], axes: ['axe'], sacks: ['hackysack'], feathers: [] };
 
 export class UltFx {

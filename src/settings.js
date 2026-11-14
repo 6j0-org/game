@@ -32,6 +32,8 @@ import './quests.js';
 import './jobs.js';
 import './ultimates.js';
 import './leases.js';
+import './world.js';
+import './grenades.js';
 
 export { T, setTuning };
 
@@ -53,7 +55,7 @@ tune('World', {
   respawnDelay: [2.5, 'Respawn delay', 'Seconds you stay dead', x(0, 30, 0.5, ' s')],
   lavaDamage: [3, 'Lava damage', 'Damage per burn while you stand in lava'],
   lavaEvery: [0.5, 'Lava burn interval', 'Seconds between lava burns', { unit: ' s', min: 0.05 }],
-  buildySwitch: [10, 'Buildy Boi switch time', 'Seconds to put on or take off the hard hat', { unit: ' s' }],
+  buildySwitch: [3, 'Buildy Boi switch time', 'Seconds to put on or take off the hard hat', { unit: ' s' }],
   messLifetime: [120, 'Mess lifetime', 'Seconds a lactose accident stays on the ground', { unit: ' s' }],
   surgeEvery: [40, 'Power Surge orb interval', 'Seconds between chances of a Power Surge orb appearing', { unit: ' s', min: 1 }],
   surgeChance: [40, 'Power Surge orb chance', 'Chance an orb appears each interval', x(0, 100, 5, '%')],
@@ -81,7 +83,7 @@ tune('Weapons', {
 // Weapons: every gun's damage and rate of fire, plus the shotgun's pellets and spread.
 const nice = (v) => Math.round(v * 10) / 10;
 for (const [k, g] of Object.entries(GUNS)) {
-  const blast = g.type === 'rocket' || g.type === 'orb';
+  const blast = ['rocket', 'orb', 'grenade', 'homing', 'drunken', 'nuke'].includes(g.type);
   const dmg = g.damage;
   const rate = nice(1 / g.cooldown);
   tune('Weapons', {
@@ -90,7 +92,7 @@ for (const [k, g] of Object.entries(GUNS)) {
     [`rate_${k}`]: [rate, `${g.name} fire rate`, 'Shots per second while you hold the button', x(0.1, Math.max(1, nice(rate * 4)), 0.1, '/s')],
   });
 }
-for (const [k, g] of Object.entries(GUNS)) if (g.mag) bindTunable(g, 'mag', 'Weapons', `mag_${k}`, `${g.name} magazine`, `Rounds of ${g.ammo} it holds before you have to reload (R)`, { min: 1, max: 500, step: 1 });
+for (const [k, g] of Object.entries(GUNS)) if (g.mag) bindTunable(g, 'mag', 'Weapons', `mag_${k}`, `${g.name} magazine`, `${g.anyGrenade ? 'Grenades' : `Rounds of ${g.ammo}`} it holds before you have to reload (R)`, { min: 1, max: 500, step: 1 });
 tune('Weapons', {
   shotgunPellets: [GUNS.shotgun.pellets, 'Shotgun pellets', 'Pellets per shell', x(1, 30, 1, '')],
   shotgunSpread: [nice((GUNS.shotgun.spread * 180) / Math.PI), 'Shotgun spread', 'How widely the pellets scatter', x(0, 20, 0.5, '°')],
@@ -193,13 +195,16 @@ export function cleanSetting(key, value) {
  * that version that still has the old default gets the new one (game.js runs this once per world; saves keep
  * every value, so without this a new default would never reach an existing world).
  */
-export const SETTINGS_VERSION = 5;
+export const SETTINGS_VERSION = 8;
 const CHANGED_DEFAULTS = [
   [2, 'hp_cow', 10], // cows take ten punches now
   [2, 'rate_shortbow', 1.8], [2, 'rate_longbow', 1], // bows: drawing them takes the time now
   // Raw meat and fish heal less now (cook them for more).
   [3, 'heal_steak', 6], [3, 'heal_liver', 10], [3, 'heal_bird', 2], [3, 'heal_penguin', 6],
   [5, 'cost_dragon', 30], [5, 'cooldown_dragon', 3], [5, 'breathDamage', 7], // Dragon's Breath is a stream now: mana and damage a second
+  [8, 'radius_nuke', 9], // the nuke digs out (and burns) at least a chunk's radius now
+  [7, 'flashSeconds', 5], // flashbangs blind you for twice as long now
+  [6, 'buildySwitch', 10], // putting on (or taking off) the hard hat takes 3 s now
   [3, 'heal_trout', 4], [3, 'heal_salmon', 6], [3, 'heal_catfish', 5], [3, 'heal_perch', 3], [3, 'heal_koi', 12],
 ];
 /** Settings that were renamed: [settings version that renamed them, old key, new key]; a saved value moves across. */

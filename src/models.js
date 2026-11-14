@@ -1,4 +1,5 @@
-// Box-built models for mobs and arrows, animated from the mob simulation.
+// Box-built models: mobs and arrows (animated from the mob simulation), held items and drops (TOOL_SHAPES,
+// DROP_SHAPES, guns' moving parts in GUN_PARTS), the infant and the delivery drone.
 // Faces are pre-shaded with vertex colours (like the terrain), and each mob's
 // material colour is the daylight level, plus a tint when hurt.
 
@@ -430,14 +431,24 @@ const TOOL_SHAPES = {
   // Guns and the grappling hook: built with the barrel along +Y and "down" along -Z.
   pistol: [[0.07, 0.32, 0.08, 0x2d3036, 0, 0.16, 0.03], [0.06, 0.06, 0.15, 0x4a3324, 0, 0.04, -0.06], [0.03, 0.04, 0.03, 0xbfc5cc, 0, 0.31, 0.08]],
   shotgun: [[0.06, 0.72, 0.06, 0x3a3e46, 0, 0.38, 0.03], [0.09, 0.16, 0.09, 0x6b4a2b, 0, 0.32, 0.0], [0.09, 0.24, 0.13, 0x6b4a2b, 0, -0.02, -0.03], [0.05, 0.05, 0.12, 0x2d3036, 0, 0.1, -0.07]],
-  machinegun: [[0.1, 0.42, 0.11, 0x2d3036, 0, 0.2, 0], [0.04, 0.32, 0.04, 0x55595f, 0, 0.56, 0.02], [0.06, 0.07, 0.17, 0x2d3036, 0, 0.22, -0.11], [0.06, 0.06, 0.13, 0x2d3036, 0, 0.05, -0.08], [0.05, 0.05, 0.04, 0xd9a93a, 0, 0.38, 0.07]],
-  rocket: [[0.16, 0.8, 0.16, 0x4f5d3a, 0, 0.3, 0.02], [0.2, 0.06, 0.2, 0x2d3036, 0, 0.7, 0.02], [0.09, 0.04, 0.09, 0xd94a3a, 0, 0.73, 0.02], [0.06, 0.06, 0.15, 0x2d3036, 0, 0.2, -0.12], [0.05, 0.12, 0.05, 0x2d3036, 0.1, 0.45, 0.08]],
+  machinegun: [[0.1, 0.42, 0.11, 0x2d3036, 0, 0.2, 0], [0.04, 0.32, 0.04, 0x55595f, 0, 0.56, 0.02], [0.06, 0.06, 0.13, 0x2d3036, 0, 0.05, -0.08], [0.05, 0.05, 0.04, 0xd9a93a, 0, 0.38, 0.07]], // (+ GUN_PARTS: the magazine)
+  rocket: [[0.16, 0.8, 0.16, 0x4f5d3a, 0, 0.3, 0.02], [0.2, 0.06, 0.2, 0x2d3036, 0, 0.7, 0.02], [0.06, 0.06, 0.15, 0x2d3036, 0, 0.2, -0.12], [0.05, 0.12, 0.05, 0x2d3036, 0.1, 0.45, 0.08]], // (+ GUN_PARTS: the rocket in it)
   sniper: [[0.07, 0.5, 0.08, 0x3d4a2e, 0, 0.12, 0], [0.04, 0.5, 0.04, 0x2d3036, 0, 0.6, 0], [0.06, 0.08, 0.06, 0x1a1a1a, 0, 0.86, 0], // stock and body, a long barrel, the muzzle
     [0.07, 0.26, 0.07, 0x1a1a1a, 0, 0.36, -0.08], [0.08, 0.03, 0.08, 0x7fb8d8, 0, 0.5, -0.08], [0.08, 0.16, 0.06, 0x4a3324, 0, -0.06, 0.04]], // the scope (blue lens), the stock
   railgun: [[0.1, 0.72, 0.1, 0x3a4a6b, 0, 0.3, 0], [0.03, 0.62, 0.03, 0x7fd8ff, 0.065, 0.4, 0], [0.03, 0.62, 0.03, 0x7fd8ff, -0.065, 0.4, 0],
     [0.15, 0.05, 0.15, 0x9adfff, 0, 0.22, 0], [0.15, 0.05, 0.15, 0x9adfff, 0, 0.38, 0], [0.15, 0.05, 0.15, 0x9adfff, 0, 0.54, 0], [0.06, 0.06, 0.15, 0x2d3036, 0, 0.06, -0.09]],
   overcharge: [[0.24, 0.6, 0.24, 0x3d4a3a, 0, 0.25, 0], [0.28, 0.12, 0.28, 0x2d3036, 0, 0.6, 0], [0.16, 0.05, 0.16, 0x7dffb0, 0, 0.675, 0],
     [0.05, 0.42, 0.05, 0x7dffb0, 0.14, 0.25, 0], [0.05, 0.42, 0.05, 0x7dffb0, -0.14, 0.25, 0], [0.07, 0.07, 0.17, 0x2d3036, 0, 0.12, -0.15]],
+  // Explosives (+ GUN_PARTS: what goes in each)
+  launcher: [[0.12, 0.4, 0.12, 0x3a4030, 0, 0.2, 0], [0.17, 0.36, 0.17, 0x2d3036, 0, 0.55, 0.02], [0.06, 0.06, 0.15, 0x2d3036, 0, 0.06, -0.09],
+    [0.08, 0.2, 0.08, 0x4a3324, 0, -0.1, 0], [0.03, 0.06, 0.04, 0xd9a93a, 0, 0.42, 0.11]],
+  flaregun: [[0.08, 0.28, 0.09, 0xe8621a, 0, 0.15, 0.03], [0.1, 0.06, 0.1, 0x2d3036, 0, 0.3, 0.03], [0.065, 0.065, 0.16, 0xc84a14, 0, 0.04, -0.07]],
+  homing: [[0.17, 0.85, 0.17, 0x5a6a3a, 0, 0.3, 0.02], [0.2, 0.06, 0.2, 0x2d3036, 0, 0.72, 0.02], [0.06, 0.06, 0.15, 0x2d3036, 0, 0.2, -0.12],
+    [0.08, 0.14, 0.06, 0x2d3036, 0.12, 0.42, 0.06], [0.05, 0.05, 0.02, 0x7fd8ff, 0.12, 0.42, 0.1]],
+  drunken: [[0.3, 0.5, 0.3, 0x4a4f58, 0, 0.3, 0.02], [0.06, 0.06, 0.15, 0x2d3036, 0, 0.12, -0.2], [0.04, 0.5, 0.04, 0xf2c230, 0.16, 0.3, 0.02]],
+  nuke: [[0.22, 0.95, 0.22, 0x3a3e46, 0, 0.32, 0.02], [0.26, 0.08, 0.26, 0xf2c230, 0, 0.78, 0.02], [0.26, 0.08, 0.26, 0xf2c230, 0, -0.1, 0.02],
+    [0.06, 0.06, 0.15, 0x2d3036, 0, 0.2, -0.15], [0.1, 0.1, 0.02, 0xf2c230, 0.115, 0.4, 0.02]],
+  detonator: [[0.12, 0.2, 0.07, 0x2d3036, 0, 0.1, 0], [0.06, 0.03, 0.04, 0xd94a3a, 0, 0.2, 0.02], [0.015, 0.2, 0.015, 0x55595f, 0.04, 0.3, 0], [0.03, 0.015, 0.01, 0x3cff6a, -0.03, 0.05, 0.036]],
   grapple: [[0.1, 0.36, 0.1, 0x55595f, 0, 0.18, 0], [0.2, 0.04, 0.04, 0xbfc5cc, 0, 0.4, 0], [0.04, 0.09, 0.04, 0xbfc5cc, 0.1, 0.44, 0], [0.04, 0.09, 0.04, 0xbfc5cc, -0.1, 0.44, 0],
     [0.12, 0.09, 0.12, 0xb8863b, 0, 0.13, 0.07], [0.06, 0.06, 0.13, 0x2d3036, 0, 0.05, -0.08]],
   // Phone: dark slab with a colourful screen facing you.
@@ -587,6 +598,103 @@ const DROP_SHAPES = {
     ],
   };
 
+/**
+ * The moving parts of guns that reload (weapons.js `mag`), in the gun's frame (TOOL_SHAPES: barrel along +Y, down
+ * along -Z), animated by avatars.js. `mag`: what comes out and goes back in, sliding along `out` (`drop`: it
+ * falls away when it comes out; otherwise it just isn't there until a load). `round`: one shell pushed in from
+ * `out` per load, gone inside. `action`: the slide, pump, handle or bolt, worked by `travel` when you finish
+ * (`open`: held back the whole time you reload). `hand`: what your other hand holds while you reload (a fresh
+ * magazine, a shell...), drawn as `reload:<gun>`; in the hand +Z is up and +Y forward.
+ */
+export const GUN_PARTS = {
+  pistol: {
+    mag: [[0.04, 0.04, 0.11, 0x55595f, 0, 0.04, -0.085], [0.052, 0.048, 0.02, 0x1a1c20, 0, 0.04, -0.142]], out: [0, 0, -1], drop: true,
+    action: [[0.076, 0.24, 0.03, 0x3a3e46, 0, 0.2, 0.06]], travel: [0, -0.07, 0],
+    hand: [[0.04, 0.04, 0.12, 0x55595f, 0, 0, 0.04], [0.052, 0.048, 0.02, 0x1a1c20, 0, 0, -0.025], [0.02, 0.03, 0.02, 0xd9a93a, 0, 0.005, 0.105]],
+  },
+  shotgun: {
+    round: [[0.035, 0.08, 0.035, 0xc83a2a, 0, 0.17, -0.02], [0.04, 0.02, 0.04, 0xd9a93a, 0, 0.125, -0.02]], out: [0, -0.03, -0.12],
+    action: [[0.095, 0.16, 0.095, 0x6b4a2b, 0, 0.32, 0]], travel: [0, -0.1, 0],
+    hand: [[0.035, 0.035, 0.08, 0xc83a2a, 0, 0, 0.04], [0.04, 0.04, 0.02, 0xd9a93a, 0, 0, -0.005]],
+  },
+  machinegun: {
+    mag: [[0.06, 0.07, 0.17, 0x2d3036, 0, 0.22, -0.11], [0.065, 0.075, 0.02, 0x1a1c20, 0, 0.22, -0.2]], out: [0, 0.15, -1], drop: true,
+    action: [[0.03, 0.04, 0.03, 0xbfc5cc, 0.065, 0.32, 0.03]], travel: [0, -0.1, 0],
+    hand: [[0.06, 0.07, 0.17, 0x2d3036, 0, 0, 0.06], [0.065, 0.075, 0.02, 0x1a1c20, 0, 0, -0.03], [0.03, 0.03, 0.02, 0xd9a93a, 0, 0, 0.15]],
+  },
+  rocket: { // a rocket goes in at the front
+    mag: [[0.09, 0.04, 0.09, 0xd94a3a, 0, 0.73, 0.02], [0.07, 0.3, 0.07, 0x6b7a4a, 0, 0.56, 0.02]], out: [0, 0.5, 0],
+    hand: [[0.07, 0.3, 0.07, 0x6b7a4a, 0, 0.05, 0], [0.09, 0.06, 0.09, 0xd94a3a, 0, 0.22, 0], [0.1, 0.04, 0.1, 0x2d3036, 0, -0.1, 0]],
+  },
+  sniper: {
+    mag: [[0.05, 0.1, 0.06, 0x2d3036, 0, 0.08, -0.065]], out: [0, 0, -1], drop: true,
+    action: [[0.08, 0.025, 0.025, 0xbfc5cc, 0.06, 0.02, 0.03], [0.035, 0.035, 0.035, 0x1a1a1a, 0.1, 0.02, 0.03]], travel: [0, -0.08, 0], open: true,
+    hand: [[0.05, 0.06, 0.1, 0x2d3036, 0, 0, 0.05], [0.02, 0.02, 0.02, 0xd9a93a, 0, 0, 0.105]],
+  },
+  railgun: {
+    mag: [[0.07, 0.16, 0.06, 0x2a3a5a, 0, 0.22, -0.08], [0.04, 0.12, 0.02, 0x7fd8ff, 0, 0.22, -0.112]], out: [0, 0, -1], drop: true,
+    hand: [[0.07, 0.06, 0.16, 0x2a3a5a, 0, 0, 0.08], [0.04, 0.065, 0.12, 0x7fd8ff, 0, 0, 0.08]],
+  },
+  launcher: { // a fat shell pushed into the breech, one at a time
+    round: [[0.09, 0.12, 0.09, 0x4f5d3a, 0, 0.3, 0.02], [0.1, 0.03, 0.1, 0xd9a93a, 0, 0.23, 0.02]], out: [0, -0.18, -0.15],
+    hand: [[0.09, 0.09, 0.12, 0x4f5d3a, 0, 0, 0.06], [0.1, 0.1, 0.03, 0xd9a93a, 0, 0, 0]],
+  },
+  flaregun: { // a fat cartridge in at the back of the barrel
+    round: [[0.06, 0.1, 0.06, 0xe8621a, 0, 0.12, 0.04], [0.07, 0.02, 0.07, 0xf2e6c4, 0, 0.07, 0.04]], out: [0, -0.2, 0.05],
+    hand: [[0.06, 0.06, 0.1, 0xe8621a, 0, 0, 0.05], [0.07, 0.07, 0.02, 0xf2e6c4, 0, 0, 0]],
+  },
+  homing: { // a missile in at the front
+    mag: [[0.1, 0.05, 0.1, 0xd94a3a, 0, 0.76, 0.02], [0.08, 0.3, 0.08, 0xe8ecf0, 0, 0.58, 0.02]], out: [0, 0.5, 0],
+    hand: [[0.07, 0.3, 0.07, 0xe8ecf0, 0, 0.05, 0], [0.09, 0.06, 0.09, 0xd94a3a, 0, 0.22, 0], [0.1, 0.04, 0.1, 0x2d3036, 0, -0.1, 0]],
+  },
+  drunken: { // the front of the pod, eight rockets in it, swaps out
+    mag: [[0.26, 0.05, 0.26, 0x2d3036, 0, 0.56, 0.02], [0.05, 0.05, 0.05, 0xd94a3a, -0.07, 0.6, -0.05], [0.05, 0.05, 0.05, 0xd94a3a, 0.07, 0.6, -0.05],
+      [0.05, 0.05, 0.05, 0xd94a3a, -0.07, 0.6, 0.09], [0.05, 0.05, 0.05, 0xd94a3a, 0.07, 0.6, 0.09]], out: [0, 0.4, -0.3], drop: true,
+    hand: [[0.2, 0.2, 0.06, 0x2d3036, 0, 0, 0.1], [0.05, 0.05, 0.05, 0xd94a3a, -0.05, 0.05, 0.07], [0.05, 0.05, 0.05, 0xd94a3a, 0.05, 0.05, 0.07], [0.05, 0.05, 0.05, 0xd94a3a, -0.05, 0.05, 0.13], [0.05, 0.05, 0.05, 0xd94a3a, 0.05, 0.05, 0.13]],
+  },
+  nuke: { // the warhead, nose first, in at the front
+    mag: [[0.15, 0.12, 0.15, 0xf2c230, 0, 0.84, 0.02], [0.12, 0.3, 0.12, 0x3a3e46, 0, 0.68, 0.02]], out: [0, 0.6, 0],
+    hand: [[0.12, 0.34, 0.12, 0x3a3e46, 0, 0.05, 0], [0.15, 0.1, 0.15, 0xf2c230, 0, 0.25, 0]],
+  },
+  overcharge: { // a glowing cell on top at the back: it pops up and out
+    mag: [[0.12, 0.16, 0.08, 0x2d3036, 0, 0.12, 0.15], [0.08, 0.12, 0.085, 0x7dffb0, 0, 0.12, 0.15]], out: [0.3, 0, 1], drop: true,
+    hand: [[0.12, 0.08, 0.16, 0x2d3036, 0, 0, 0.08], [0.08, 0.085, 0.12, 0x7dffb0, 0, 0, 0.08]],
+  },
+};
+/** Grenades (grenades.js), held, flying or lying about: `led` is a radio charge's light, `chute` opens over a flare. (Mines show nothing.) */
+const GRENADE_SHAPES = {
+  frag: [[0.14, 0.16, 0.14, 0x4f5d3a, 0, 0, 0], [0.15, 0.02, 0.15, 0x3d4a2e, 0, 0.03, 0], [0.15, 0.02, 0.15, 0x3d4a2e, 0, -0.03, 0], [0.06, 0.05, 0.06, 0x9aa0a8, 0, 0.1, 0], [0.02, 0.08, 0.03, 0x9aa0a8, 0.05, 0.07, 0]],
+  sticky: [[0.14, 0.14, 0.14, 0x3a8a4a, 0, 0, 0], [0.06, 0.05, 0.06, 0x9aa0a8, 0, 0.09, 0], [0.1, 0.03, 0.1, 0x9aff9a, 0, -0.08, 0]],
+  incendiary: [[0.12, 0.18, 0.12, 0xb03020, 0, 0, 0], [0.125, 0.04, 0.125, 0xf2c230, 0, 0.02, 0], [0.06, 0.05, 0.06, 0x9aa0a8, 0, 0.11, 0]],
+  flashbang: [[0.1, 0.22, 0.1, 0xc8ccd4, 0, 0, 0], [0.105, 0.02, 0.105, 0x6a707a, 0, 0.05, 0], [0.105, 0.02, 0.105, 0x6a707a, 0, -0.05, 0], [0.05, 0.04, 0.05, 0x9aa0a8, 0, 0.13, 0]],
+  mine: [[0.3, 0.07, 0.3, 0x3d4a2e, 0, 0, 0], [0.22, 0.03, 0.22, 0x4f5d3a, 0, 0.045, 0]],
+  charge: [[0.24, 0.08, 0.16, 0xc8b890, 0, 0, 0], [0.25, 0.02, 0.17, 0x2d3036, 0, 0, 0], [0.015, 0.12, 0.015, 0x2d3036, 0.08, 0.08, 0]],
+  flare: [[0.05, 0.14, 0.05, 0xe8621a, 0, 0, 0], [0.06, 0.04, 0.06, 0xffe0c0, 0, 0.08, 0]],
+};
+const GRENADE_LED = { charge: [[0.03, 0.02, 0.03, 0x3cff6a, -0.07, 0.05, 0.04]] };
+const FLARE_CHUTE = [[0.5, 0.04, 0.5, 0xf2e6c4, 0, 0.75, 0], [0.01, 0.62, 0.01, 0xdddddd, 0.2, 0.4, 0], [0.01, 0.62, 0.01, 0xdddddd, -0.2, 0.4, 0]];
+function grenadeModel(kind, material) {
+  const g = part(material, GRENADE_SHAPES[kind]);
+  if (GRENADE_LED[kind]) { g.userData.led = part(material, GRENADE_LED[kind]); g.add(g.userData.led); }
+  if (kind === 'flare') { g.userData.chute = part(material, FLARE_CHUTE); g.userData.chute.visible = false; g.add(g.userData.chute); }
+  return g;
+}
+
+/** A gun with its moving parts as separate groups (`userData.mag`, `round`, `action`, each with `userData.home`). */
+function gunModel(kind, material) {
+  const g = part(material, TOOL_SHAPES[kind]);
+  const def = GUN_PARTS[kind];
+  for (const key of ['mag', 'round', 'action']) {
+    if (!def[key]) continue;
+    const p = part(material, def[key]);
+    p.userData.home = p.position.clone();
+    g.add(p);
+    g.userData[key] = p;
+  }
+  if (g.userData.round) g.userData.round.visible = false; // (only seen on its way in)
+  return g;
+}
+
 /** A first-person model for a held item: tools, the wand, food, dishes (null for an empty hand). */
 const darker = (c) => { const k = 0.62; return (Math.round(((c >> 16) & 255) * k) << 16) | (Math.round(((c >> 8) & 255) * k) << 8) | Math.round((c & 255) * k); };
 /** A cooked food (FOOD `cookedFrom`) looks like its raw self, browned. */
@@ -595,6 +703,9 @@ function cookedShape(kind) {
   return raw && DROP_SHAPES[raw] ? DROP_SHAPES[raw].map(([w, h, d, c, ...rest]) => [w, h, d, darker(c), ...rest]) : null;
 }
 export function buildHeldModel(kind, material) {
+  if (GUN_PARTS[kind]) return gunModel(kind, material);
+  if (typeof kind === 'string' && (kind.startsWith('grenade:') || kind.startsWith('ammo:')) && GRENADE_SHAPES[kind.split(':')[1]]) return grenadeModel(kind.split(':')[1], material); // (a grenade in the hand looks like one)
+  if (typeof kind === 'string' && kind.startsWith('reload:')) { const def = GUN_PARTS[kind.slice(7)]; return def ? part(material, def.hand) : null; } // (what you reload with)
   const shape = TOOL_SHAPES[kind] || DROP_SHAPES[kind] || cookedShape(kind) || (typeof kind === 'string' && kind.startsWith('scroll:') ? TOOL_SHAPES.scroll : null)
     || (typeof kind === 'string' && kind.startsWith('ammo:') ? DROP_SHAPES.ammo : null); // (a box of ammo, held for reloading)
   return shape ? part(material, shape) : null;

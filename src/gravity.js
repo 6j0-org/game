@@ -7,7 +7,7 @@
 // behind), and ice floats on water. Logic only: no Three.js, no DOM (the server runs it).
 
 import { T, tune } from './tuning.js';
-import { AIR, WATER, ICE, FLUID } from './blocks.js';
+import { AIR, WATER, ICE, FLUID, WORLD_EDGE } from './blocks.js';
 import { CH } from './world.js';
 
 tune('Blocks', {
@@ -121,6 +121,7 @@ export class BlockGravity {
         if (seen.has(k) || this.falling.has(k)) continue;
         if (grounded.has(k)) { found = true; break; }
         const nid = w.getBlock(nx, ny, nz);
+        if (nid === WORLD_EDGE) { found = true; break; } // (held up by the edge of the world, like the floor)
         if (!holds(nid)) continue;
         seen.set(k, { x: nx, y: ny, z: nz, id: nid });
         stack.push([nx, ny, nz]);
